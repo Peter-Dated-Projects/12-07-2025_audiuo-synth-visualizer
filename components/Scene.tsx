@@ -16,12 +16,26 @@ import { useRef, useState, useEffect } from "react";
 
 interface SceneContentProps {
   getFrequencyData?: () => { bass: number; mid: number; treble: number };
+  mode: "points" | "lines";
+  analyser?: AnalyserNode | null;
 }
 
-function SceneContent({ getFrequencyData }: SceneContentProps) {
+// 1. DEFINE THE "BEAUTIFUL" PRESETS
+const PRESETS = {
+  IDLE: new THREE.Vector3(1, 1, 1), // Circle
+  BASS: new THREE.Vector3(3, 4, 5), // Major Triad
+  MID: new THREE.Vector3(5, 7, 9), // Complex/Jazz
+  PEAK: new THREE.Vector3(10, 12, 15), // Dense/Minor
+};
+
+function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
   const materialRef = useRef<HarmonicMaterialType>(null);
   const { camera } = useThree();
   const initialCameraPos = useRef<THREE.Vector3 | null>(null);
+
+  // Store the current state of the shape
+  const currentRatios = useRef(new THREE.Vector3(1, 1, 1));
+  const targetVector = useRef(PRESETS.IDLE);
 
   // Capture initial camera position once
   useEffect(() => {
@@ -53,15 +67,27 @@ function SceneContent({ getFrequencyData }: SceneContentProps) {
 
       // Update audio uniforms if data is available
       if (getFrequencyData) {
-        const { bass, mid, treble } = getFrequencyData();
-        // Smooth interpolation could be added here, but direct mapping is punchier
-        materialRef.current.uBass = THREE.MathUtils.lerp(materialRef.current.uBass, bass, 0.1);
-        materialRef.current.uMid = THREE.MathUtils.lerp(materialRef.current.uMid, mid, 0.1);
-        materialRef.current.uTreble = THREE.MathUtils.lerp(
-          materialRef.current.uTreble,
-          treble,
-          0.1
-        );
+        const { treble } = getFrequencyData();
+
+        // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
+        // We map the treble intensity to different complexity levels
+        // Thresholds adjusted for the boosted treble value
+        if (treble < 0.15) {
+          targetVector.current = PRESETS.IDLE;
+        } else if (treble < 0.45) {
+          targetVector.current = PRESETS.MID; // Moderate complexity
+        } else {
+          targetVector.current = PRESETS.PEAK; // High complexity
+        }
+
+        // 3. SMOOTHLY INTERPOLATE (LERP)
+        // We move 5% of the way to the target every frame.
+        const speed = 0.05;
+
+        currentRatios.current.lerp(targetVector.current, speed);
+
+        // 4. UPDATE SHADER
+        materialRef.current.uCurrentRatios = currentRatios.current;
       }
     }
 
@@ -88,7 +114,7 @@ function SceneContent({ getFrequencyData }: SceneContentProps) {
 
   return (
     <>
-      <HarmonicVisualizer ref={materialRef} />
+      <HarmonicVisualizer ref={materialRef} mode={mode} analyser={analyser} />
       <EffectComposer>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />
         <Scanline blendFunction={BlendFunction.OVERLAY} density={1.25} />
@@ -106,17 +132,19 @@ function SceneContent({ getFrequencyData }: SceneContentProps) {
 
 interface SceneProps {
   getFrequencyData?: () => { bass: number; mid: number; treble: number };
+  mode?: "points" | "lines";
+  analyser?: AnalyserNode | null;
 }
 
-export default function Scene({ getFrequencyData }: SceneProps) {
+export default function Scene({ getFrequencyData, mode = "points", analyser }: SceneProps) {
   return (
     <Canvas
-      camera={{ position: [0, 0, 30], fov: 40 }}
+      camera={{ position: [0, 0, 20], fov: 40 }}
       style={{ background: "black", width: "100%", height: "100%" }}
       dpr={[1, 2]}
       frameloop="always"
     >
-      <SceneContent getFrequencyData={getFrequencyData} />
+      <SceneContent getFrequencyData={getFrequencyData} mode={mode} analyser={analyser} />
     </Canvas>
   );
 }

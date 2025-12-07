@@ -5,12 +5,22 @@ import Scene from "../components/Scene";
 import { useAudioAnalyzer } from "../hooks/useAudioAnalyzer";
 
 export default function Home() {
-  const { audioRef, isPlaying, audioUrl, loadFile, togglePlay, getFrequencyData } =
-    useAudioAnalyzer();
+  const {
+    audioRef,
+    isPlaying,
+    isLooping,
+    audioUrl,
+    loadFile,
+    togglePlay,
+    toggleLoop,
+    getFrequencyData,
+    analyser,
+  } = useAudioAnalyzer();
 
   const [volume, setVolume] = useState(0.5);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [mode, setMode] = useState<"points" | "lines">("points");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,7 +75,7 @@ export default function Home() {
       <div className="w-full h-[70%] flex items-center justify-center relative">
         <div className="relative aspect-[4/3] h-full max-w-full bg-black rounded-[3rem] overflow-hidden border-4 border-zinc-800 shadow-[0_0_50px_rgba(255,0,0,0.2)]">
           <div className="absolute inset-0 pointer-events-none z-10 rounded-[3rem] shadow-[inset_0_0_100px_rgba(0,0,0,0.9)]"></div>
-          <Scene getFrequencyData={getFrequencyData} />
+          <Scene getFrequencyData={getFrequencyData} mode={mode} analyser={analyser} />
         </div>
       </div>
 
@@ -89,6 +99,22 @@ export default function Home() {
           />
         </div>
 
+        {/* Visualization Mode Selector */}
+        <div className="flex items-center gap-4">
+          <label htmlFor="mode-select" className="text-xs font-mono text-zinc-500 uppercase">
+            Mode
+          </label>
+          <select
+            id="mode-select"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as "points" | "lines")}
+            className="bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2 text-sm font-medium text-zinc-200 focus:outline-none focus:border-red-500/50 transition-all duration-300"
+          >
+            <option value="points">Points</option>
+            <option value="lines">Lines</option>
+          </select>
+        </div>
+
         {/* Playback Controls */}
         <div className="flex flex-col items-center gap-4 w-full max-w-md">
           {/* Progress Bar */}
@@ -107,6 +133,19 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-8">
+            {/* Loop Button */}
+            <button
+              onClick={toggleLoop}
+              disabled={!audioUrl}
+              className={`text-xs font-mono px-3 py-1 rounded-full border transition-all duration-300 ${
+                isLooping
+                  ? "border-red-500 text-red-500 bg-red-500/10 shadow-[0_0_10px_rgba(255,0,0,0.3)]"
+                  : "border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+              } ${!audioUrl ? "opacity-50 cursor-not-allowed" : ""}`}
+            >
+              LOOP
+            </button>
+
             <button
               onClick={togglePlay}
               disabled={!audioUrl}

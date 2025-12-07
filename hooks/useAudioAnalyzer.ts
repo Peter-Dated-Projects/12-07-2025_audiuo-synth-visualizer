@@ -13,6 +13,7 @@ export const useAudioAnalyzer = () => {
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -47,6 +48,7 @@ export const useAudioAnalyzer = () => {
     }
     // Ensure context is initialized on user interaction
     initAudio();
+    if (isPlaying) togglePlay();
   };
 
   const togglePlay = async () => {
@@ -70,6 +72,13 @@ export const useAudioAnalyzer = () => {
     }
   };
 
+  const toggleLoop = () => {
+    if (audioRef.current) {
+      audioRef.current.loop = !isLooping;
+      setIsLooping(!isLooping);
+    }
+  };
+
   const getFrequencyData = useCallback((): AudioData => {
     if (!analyserRef.current) return { bass: 0, mid: 0, treble: 0 };
 
@@ -78,9 +87,13 @@ export const useAudioAnalyzer = () => {
     analyserRef.current.getByteFrequencyData(dataArray);
 
     // Calculate bands (approximate ranges for 1024 FFT size)
-    // Bass: 0-10 (approx 0-200Hz)
-    // Mid: 11-100 (approx 200Hz-2kHz)
-    // Treble: 101-511 (approx 2kHz-20kHz)
+    // Sample Rate is typically 44100Hz or 48000Hz.
+    // Frequency Resolution = SampleRate / FFTSize
+    // e.g., 44100 / 1024 ≈ 43 Hz per bin.
+    
+    // Bass: 0-10 (approx 0-430Hz)
+    // Mid: 11-100 (approx 473Hz-4.3kHz)
+    // Treble: 101-255 (approx 4.3kHz-11kHz) - We cap at 255 to focus on audible highs
     
     const getAverage = (start: number, end: number) => {
       let sum = 0;
@@ -90,9 +103,13 @@ export const useAudioAnalyzer = () => {
       return sum / (end - start);
     };
 
+    // High frequencies naturally have lower energy in most music (pink noise spectrum).
+    // We need to boost the treble sensitivity significantly to get good visual reaction.
+    // We also use a slightly lower start bin (80 instead of 101) to catch more "presence".
     const bass = getAverage(0, 10) / 255;
-    const mid = getAverage(11, 100) / 255;
-    const treble = getAverage(101, 255) / 255; // Cap treble range to avoid high-end noise
+    const mid = getAverage(11, 80) / 255;
+    const rawTreble = getAverage(81, 255) / 255;
+    const treble = Math.min(1, rawTreble * 3.0); // 3x Boost for treble
 
     return { bass, mid, treble };
   }, []);
@@ -113,10 +130,13 @@ export const useAudioAnalyzer = () => {
   return {
     audioRef,
     isPlaying,
+    isLooping,
     audioUrl,
     isReady,
     loadFile,
     togglePlay,
-    getFrequencyData
+    toggleLoop,
+    getFrequencyData,
+    analyser: analyserRef.current,
   };
 };
