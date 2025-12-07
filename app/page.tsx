@@ -2,39 +2,21 @@
 
 import { useState, useRef, useEffect } from "react";
 import Scene from "../components/Scene";
+import { useAudioAnalyzer } from "../hooks/useAudioAnalyzer";
 
 export default function Home() {
-  const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const { audioRef, isPlaying, audioUrl, loadFile, togglePlay, getFrequencyData } =
+    useAudioAnalyzer();
+
   const [volume, setVolume] = useState(0.5);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setAudioFile(file);
-      setIsPlaying(false);
-
-      if (audioRef.current) {
-        const url = URL.createObjectURL(file);
-        audioRef.current.src = url;
-        audioRef.current.load();
-      }
-    }
-  };
-
-  const togglePlay = () => {
-    if (audioFile && audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
+      loadFile(e.target.files[0]);
     }
   };
 
@@ -58,15 +40,11 @@ export default function Home() {
     }
   };
 
-  const handleEnded = () => {
-    setIsPlaying(false);
-  };
-
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
-  }, [volume]);
+  }, [volume, audioRef]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -80,14 +58,14 @@ export default function Home() {
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
-        onEnded={handleEnded}
+        onEnded={() => togglePlay()} // Sync state when audio ends
       />
 
       {/* Visualizer Section - Top 75% */}
       <div className="w-full h-[70%] flex items-center justify-center relative">
         <div className="relative aspect-[4/3] h-full max-w-full bg-black rounded-[3rem] overflow-hidden border-4 border-zinc-800 shadow-[0_0_50px_rgba(255,0,0,0.2)]">
           <div className="absolute inset-0 pointer-events-none z-10 rounded-[3rem] shadow-[inset_0_0_100px_rgba(0,0,0,0.9)]"></div>
-          <Scene />
+          <Scene getFrequencyData={getFrequencyData} />
         </div>
       </div>
 
@@ -99,7 +77,7 @@ export default function Home() {
             htmlFor="audio-upload"
             className="cursor-pointer px-6 py-3 bg-zinc-900 border border-zinc-700 rounded-full hover:bg-zinc-800 hover:border-red-500/50 transition-all duration-300 text-sm font-medium tracking-wider uppercase"
           >
-            {audioFile ? audioFile.name : "Select Audio File"}
+            {audioUrl ? "Change Audio File" : "Select Audio File"}
           </label>
           <input
             id="audio-upload"
@@ -122,7 +100,7 @@ export default function Home() {
               max={duration || 100}
               value={currentTime}
               onChange={handleSeek}
-              disabled={!audioFile}
+              disabled={!audioUrl}
               className="flex-1 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:hover:shadow-[0_0_10px_rgba(255,0,0,0.5)]"
             />
             <span>{formatTime(duration)}</span>
@@ -131,9 +109,9 @@ export default function Home() {
           <div className="flex items-center gap-8">
             <button
               onClick={togglePlay}
-              disabled={!audioFile}
+              disabled={!audioUrl}
               className={`w-16 h-16 flex items-center justify-center rounded-full border-2 transition-all duration-300 ${
-                audioFile
+                audioUrl
                   ? "border-red-500 text-red-500 hover:bg-red-500/10 hover:shadow-[0_0_20px_rgba(255,0,0,0.4)]"
                   : "border-zinc-800 text-zinc-800 cursor-not-allowed"
               }`}

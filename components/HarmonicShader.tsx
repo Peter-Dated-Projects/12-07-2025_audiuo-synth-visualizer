@@ -12,12 +12,19 @@ const HarmonicMaterial = shaderMaterial(
     uColor: new THREE.Color(1.0, 0.1, 0.1), // Red color
     uRatios: new THREE.Vector4(4, 6, 10, 12),
     uRatio5: 15,
+    uBass: 0,
+    uMid: 0,
+    uTreble: 0,
   },
   // Vertex Shader
   `
     uniform float uTime;
     uniform vec4 uRatios;
     uniform float uRatio5;
+    uniform float uBass;
+    uniform float uMid;
+    uniform float uTreble;
+    
     attribute float aIndex;
     varying float vAlpha;
 
@@ -44,24 +51,39 @@ const HarmonicMaterial = shaderMaterial(
       // Adding uTime to animate the flow along the curve or the shape itself
       float time = uTime * 0.2;
       
-      float x = sin(r1 * t + time) * cos(r2 * t);
-      float y = sin(r3 * t + time) * cos(r4 * t);
-      float z = sin(r5 * t + time);
+      // Audio Reactivity: Modulate frequencies with Bass
+      float bassMod = 1.0 + uBass * 0.5;
+      
+      float x = sin(r1 * t * bassMod + time) * cos(r2 * t);
+      float y = sin(r3 * t * bassMod + time) * cos(r4 * t);
+      float z = sin(r5 * t * bassMod + time);
 
       vec3 pos = vec3(x, y, z);
 
-      // Breathing effect
+      // Breathing effect + Audio Pulse
+      // Combine slow breathing with rapid bass pulse
       float breathe = 1.0 + 0.1 * sin(uTime * 1.0);
-      pos *= breathe * 3.5; // Scale up
+      float audioPulse = 1.0 + uBass * 0.8 + uMid * 0.4;
+      
+      pos *= breathe * 3.5 * audioPulse; // Scale up
+
+      // Add some noise/distortion based on Treble
+      float noise = sin(t * 50.0 + uTime) * uTreble * 0.2;
+      pos += normalize(pos) * noise;
 
       vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
       gl_Position = projectionMatrix * mvPosition;
 
       // Size attenuation
-      gl_PointSize = (20.0 / -mvPosition.z);
+      // Modulate size with Mid frequencies
+      float sizeMod = 1.0 + uMid * 2.0;
+      gl_PointSize = (25.0 * sizeMod / -mvPosition.z);
 
       // Alpha based on depth or just constant
       vAlpha = 0.6 + 0.4 * sin(t * 5.0 + uTime * 2.0);
+      
+      // Boost alpha with audio
+      vAlpha = min(1.0, vAlpha + uTreble * 0.5);
     }
   `,
   // Fragment Shader
@@ -91,6 +113,9 @@ export type HarmonicMaterialType = THREE.ShaderMaterial & {
   uColor: THREE.Color;
   uRatios: THREE.Vector4;
   uRatio5: number;
+  uBass: number;
+  uMid: number;
+  uTreble: number;
 };
 
 declare module "@react-three/fiber" {

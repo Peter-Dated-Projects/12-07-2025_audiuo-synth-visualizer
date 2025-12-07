@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   EffectComposer,
   Bloom,
@@ -12,10 +12,21 @@ import {
 import { BlendFunction } from "postprocessing";
 import { HarmonicVisualizer, HarmonicMaterialType } from "./HarmonicShader";
 import * as THREE from "three";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
-function SceneContent() {
+interface SceneContentProps {
+  getFrequencyData?: () => { bass: number; mid: number; treble: number };
+}
+
+function SceneContent({ getFrequencyData }: SceneContentProps) {
   const materialRef = useRef<HarmonicMaterialType>(null);
+  const { camera } = useThree();
+  const initialCameraPos = useRef<THREE.Vector3 | null>(null);
+
+  // Capture initial camera position once
+  useEffect(() => {
+    initialCameraPos.current = camera.position.clone();
+  }, [camera]);
 
   // Generate random offsets and speeds for less predictable movement
   const [movementParams] = useState(() => ({
@@ -39,19 +50,39 @@ function SceneContent() {
     // Update shader time
     if (materialRef.current) {
       materialRef.current.uTime += delta;
+
+      // Update audio uniforms if data is available
+      if (getFrequencyData) {
+        const { bass, mid, treble } = getFrequencyData();
+        // Smooth interpolation could be added here, but direct mapping is punchier
+        materialRef.current.uBass = THREE.MathUtils.lerp(materialRef.current.uBass, bass, 0.1);
+        materialRef.current.uMid = THREE.MathUtils.lerp(materialRef.current.uMid, mid, 0.1);
+        materialRef.current.uTreble = THREE.MathUtils.lerp(
+          materialRef.current.uTreble,
+          treble,
+          0.1
+        );
+      }
     }
 
     // Smooth camera movement with random offsets
     const t = state.clock.elapsedTime;
     const { x, y } = movementParams;
 
-    state.camera.position.x =
-      Math.sin(t * x.freq1 + x.offset1) * x.amp + Math.cos(t * x.freq2 + x.offset2) * (x.amp * 0.5);
+    if (initialCameraPos.current) {
+      state.camera.position.x =
+        initialCameraPos.current.x +
+        Math.sin(t * x.freq1 + x.offset1) * x.amp +
+        Math.cos(t * x.freq2 + x.offset2) * (x.amp * 0.5);
 
-    state.camera.position.y =
-      Math.cos(t * y.freq1 + y.offset1) * y.amp + Math.sin(t * y.freq2 + y.offset2) * (y.amp * 0.5);
+      state.camera.position.y =
+        initialCameraPos.current.y +
+        Math.cos(t * y.freq1 + y.offset1) * y.amp +
+        Math.sin(t * y.freq2 + y.offset2) * (y.amp * 0.5);
 
-    state.camera.position.z = 8 + Math.sin(t * 0.1) * 0.5;
+      state.camera.position.z = initialCameraPos.current.z + Math.sin(t * 0.1) * 0.5;
+    }
+
     state.camera.lookAt(0, 0, 0);
   });
 
@@ -73,15 +104,19 @@ function SceneContent() {
   );
 }
 
-export default function Scene() {
+interface SceneProps {
+  getFrequencyData?: () => { bass: number; mid: number; treble: number };
+}
+
+export default function Scene({ getFrequencyData }: SceneProps) {
   return (
     <Canvas
-      camera={{ position: [0, 0, 8], fov: 60 }}
+      camera={{ position: [0, 0, 50], fov: 40 }}
       style={{ background: "black", width: "100%", height: "100%" }}
       dpr={[1, 2]}
       frameloop="always"
     >
-      <SceneContent />
+      <SceneContent getFrequencyData={getFrequencyData} />
     </Canvas>
   );
 }
