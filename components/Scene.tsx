@@ -29,22 +29,9 @@ interface SceneContentProps {
   analyser?: AnalyserNode | null;
 }
 
-// 1. DEFINE THE "BEAUTIFUL" PRESETS
-const PRESETS = {
-  IDLE: new THREE.Vector3(1, 1, 1), // Circle
-  BASS: new THREE.Vector3(3, 4, 5), // Major Triad
-  MID: new THREE.Vector3(5, 7, 9), // Complex/Jazz
-  PEAK: new THREE.Vector3(10, 12, 15), // Dense/Minor
-};
-
 function SceneContent({ bands, mode, analyser }: SceneContentProps) {
-  const materialRef = useRef<HarmonicMaterialType>(null);
   const { camera } = useThree();
   const initialCameraPos = useRef<THREE.Vector3 | null>(null);
-
-  // Store the current state of the shape
-  const currentRatios = useRef(new THREE.Vector3(1, 1, 1));
-  const targetVector = useRef(PRESETS.IDLE);
 
   // Capture initial camera position once
   useEffect(() => {
@@ -69,66 +56,7 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
     },
   }));
 
-  useFrame((state, delta) => {
-    // Update shader time
-    if (materialRef.current) {
-      materialRef.current.uTime += delta;
-
-      // Update audio uniforms if data is available
-      if (analyser && bands.length >= 3) {
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        analyser.getByteFrequencyData(dataArray);
-
-        const getAverage = (min: number, max: number) => {
-          const start = Math.max(0, Math.min(Math.floor(min), bufferLength - 1));
-          const end = Math.max(0, Math.min(Math.floor(max), bufferLength - 1));
-          if (start >= end) return 0;
-
-          let sum = 0;
-          for (let i = start; i < end; i++) {
-            sum += dataArray[i];
-          }
-          return sum / (end - start) / 255;
-        };
-
-        const bass = getAverage(bands[0].min, bands[0].max);
-        const mid = getAverage(bands[1].min, bands[1].max);
-        const treble = getAverage(bands[2].min, bands[2].max);
-
-        // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
-        // We map the treble intensity to different complexity levels
-        // Thresholds adjusted for the boosted treble value
-        if (treble < 0.15) {
-          targetVector.current = PRESETS.IDLE;
-        } else if (treble < 0.45) {
-          targetVector.current = PRESETS.MID; // Moderate complexity
-        } else {
-          targetVector.current = PRESETS.PEAK; // High complexity
-        }
-
-        // 3. SMOOTHLY INTERPOLATE (LERP)
-        // We move 5% of the way to the target every frame.
-        const speed = 0.05;
-
-        currentRatios.current.lerp(targetVector.current, speed);
-
-        // 4. UPDATE SHADER
-        // Map x -> BassFreq, y -> MidFreq
-        materialRef.current.uBassFreq = currentRatios.current.x;
-        materialRef.current.uMidFreq = currentRatios.current.y;
-        materialRef.current.uBassLevel = bass;
-        materialRef.current.uBassScale = bands[0].amplitude;
-        materialRef.current.uMidScale = bands[1].amplitude;
-        materialRef.current.uTrebleScale = bands[2].amplitude;
-
-        // Update Colors
-        materialRef.current.uBassColor = new THREE.Color(bands[0].color);
-        materialRef.current.uMidColor = new THREE.Color(bands[1].color);
-        materialRef.current.uTrebleColor = new THREE.Color(bands[2].color);
-      }
-    }
-
+  useFrame((state) => {
     // Smooth camera movement with random offsets
     const t = state.clock.elapsedTime;
     const { x, y } = movementParams;
@@ -152,7 +80,9 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
 
   return (
     <>
-      <HarmonicVisualizer ref={materialRef} mode={mode} analyser={analyser} />
+      {bands.map((band) => (
+        <HarmonicVisualizer key={band.id} mode={mode} analyser={analyser} band={band} />
+      ))}
       <EffectComposer>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />
         <Scanline blendFunction={BlendFunction.OVERLAY} density={1.25} />

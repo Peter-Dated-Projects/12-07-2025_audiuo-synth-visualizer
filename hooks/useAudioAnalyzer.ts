@@ -157,11 +157,25 @@ export const useAudioAnalyzer = () => {
         if (audioRef.current) {
           audioRef.current.src = url;
           audioRef.current.load();
+          
+          // Attempt to autoplay
+          try {
+            initAudio();
+            // Try to resume context if suspended (might fail without user gesture)
+            if (audioContextRef.current?.state === 'suspended') {
+              audioContextRef.current.resume().catch(() => {});
+            }
+            await audioRef.current.play();
+            setIsPlaying(true);
+          } catch (err) {
+            console.log("Autoplay prevented:", err);
+            setIsPlaying(false);
+          }
         }
       }
     };
     loadCachedFile();
-  }, []);
+  }, [initAudio]);
 
   const loadFile = (file: File) => {
     saveFileToDB(file); // Cache the file

@@ -82,10 +82,10 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
           }
         }
 
-        // Logarithmic Amplitude Scale
-        // Map 0-255 to 0-1 logarithmically
+        // Linear Amplitude Scale
+        // Map 0-255 to 0-1 linearly
         const val = Math.max(0, smoothedData[i]);
-        const percent = Math.log10(val + 1) / Math.log10(256);
+        const percent = val / 255;
 
         const barHeight = Math.min(height, height * percent);
 
@@ -192,7 +192,7 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
   return (
     <div
       ref={containerRef}
-      className="w-full h-[50px] bg-black relative cursor-crosshair select-none"
+      className="w-full h-[100%] bg-black relative cursor-crosshair select-none"
       onMouseMove={handleMouseMove}
       onMouseDown={handleMouseDown}
       style={{ cursor: hoveredSeparator ? "ew-resize" : "crosshair" }}

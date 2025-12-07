@@ -92,16 +92,16 @@ export default function Home() {
   const handleBandChange = async (id: string, newBand: Partial<FrequencyBand>) => {
     setBands((prev) => {
       const newBands = prev.map((b) => (b.id === id ? { ...b, ...newBand } : b));
-      
+
       // Save to DB
       // We need to do this asynchronously, but we can't await inside the setState callback
       // So we fire and forget, but we need the latest state.
       // A cleaner way is to use an effect or just call the async function with the new value.
       (async () => {
-        const currentSettings = await getSettingsFromDB() || {};
+        const currentSettings = (await getSettingsFromDB()) || {};
         await saveSettingsToDB({ ...currentSettings, bands: newBands });
       })();
-      
+
       return newBands;
     });
   };
@@ -150,7 +150,7 @@ export default function Home() {
         {/* Bottom Control Bar & Spectrum */}
         <div className="h-auto bg-zinc-900/50 border-t border-zinc-800 backdrop-blur-md flex flex-col">
           {/* Spectrum Analyzer */}
-          <div className="w-full h-[100px] bg-black/50 border-b border-zinc-800 relative">
+          <div className="w-full h-[125px] bg-black/50 border-b border-zinc-800 relative">
             <SpectrumAnalyzer analyser={analyser} bands={bands} onBandChange={handleBandChange} />
           </div>
 

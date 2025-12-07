@@ -9,30 +9,26 @@ import { useMemo, forwardRef, useRef } from "react";
 const HarmonicMaterial = shaderMaterial(
   {
     uTime: 0,
-    uBassFreq: 1.0,
-    uMidFreq: 1.0,
-    uBassLevel: 0.0,
-    uBassScale: 1.0,
-    uMidScale: 1.0,
-    uTrebleScale: 1.0,
-    uBassColor: new THREE.Color(1.0, 0.3, 0.0),
-    uMidColor: new THREE.Color(0.2, 0.8, 0.2), // Default Greenish
-    uTrebleColor: new THREE.Color(0.5, 0.2, 0.8), // Default Purpleish
+    uFreqX: 1.0,
+    uFreqY: 1.0,
+    uFreqZ: 1.0,
+    uAmpX: 0.0,
+    uAmpY: 0.0,
+    uAmpZ: 0.0,
+    uColor: new THREE.Color(1.0, 1.0, 1.0),
     uAudioTexture: new THREE.DataTexture(new Uint8Array(1024), 1024, 1, THREE.RedFormat),
     uIsLine: 0, // 0 for points, 1 for lines
   },
   // Vertex Shader
   `
     uniform float uTime;
-    uniform float uBassFreq;
-    uniform float uMidFreq;
-    uniform float uBassLevel;
-    uniform float uBassScale;
-    uniform float uMidScale;
-    uniform float uTrebleScale;
-    uniform vec3 uBassColor;
-    uniform vec3 uMidColor;
-    uniform vec3 uTrebleColor;
+    uniform float uFreqX;
+    uniform float uFreqY;
+    uniform float uFreqZ;
+    uniform float uAmpX;
+    uniform float uAmpY;
+    uniform float uAmpZ;
+    uniform vec3 uColor;
     uniform sampler2D uAudioTexture;
     
     attribute float aIndex;
@@ -54,49 +50,54 @@ const HarmonicMaterial = shaderMaterial(
       float rawAudio = texture2D(uAudioTexture, vec2(logIndex, 0.0)).r;
       
       // Gamma Curve (Punchy Fix)
+      float sharpAudio = pow(rawAudio, 2.5);
+
       // Amplitude Compensation (Boost Highs)
       float boost = 1.0 + (normalizedIndex * 3.0);
       float audioValue = sharpAudio * boost;
       
       // 3. Lissajous Parametric Equations
-      // We use audioValue to modulate the AMPLITUDE (Radius)
-      float radius = 5.0 + (audioValue * 3.0); 
+      // x(t) = Ax * sin(wx * t + phi)
+      // y(t) = Ay * sin(wy * t + phi)
+      // z(t) = Az * sin(wz * t + phi)
       
-      // Add a "Bass Pulse" to the overall size
-      radius += uBassLevel * 2.0;
+      // Base radius to ensure visibility
+      float baseRadius = 5.0;
+      
+      // Amplitudes driven by audio levels (uAmpX, uAmpY, uAmpZ)
+      // We scale them up to be visible
+      float Ax = baseRadius + uAmpX * 10.0;
+      float Ay = baseRadius + uAmpY * 10.0;
+      float Az = baseRadius + uAmpZ * 10.0;
 
       vec3 pos;
-      pos.x = radius * sin(uBassFreq * t + PI * 0.5) * uBassScale;
-      pos.y = radius * sin(uMidFreq * t) * uMidScale;
-      pos.z = radius * sin((uBassFreq + uMidFreq) * 0.5 * t) * uTrebleScale; // Add depth with Treble Scale
+      pos.x = Ax * sin(uFreqX * t + PI * 0.5);
+      pos.y = Ay * sin(uFreqY * t);
+      pos.z = Az * sin(uFreqZ * t);
       
-      // Optional: Twist the whole thing based on time
-      
-      // Optional: Twist the whole thing based on time
-      // pos.x += sin(uTime) * 2.0;
+      // Displace position based on audio frequency data
+      // This makes the shape deform/spike with the music
+      float displacement = 1.0 + audioValue * 3.0; 
+      pos *= displacement;
 
       // 4. Set final position
       vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
       gl_Position = projectionMatrix * mvPosition;
 
       // Pass color to fragment shader
-      // Base color (Treble/Mid mix)
-      vec3 baseColor = mix(uMidColor, uTrebleColor, 0.5 + 0.5 * sin(t));
-      
-      // Mix based on bass level (squared for sharper reaction)
-      float mixFactor = clamp(uBassLevel * uBassLevel * 1.5, 0.0, 1.0);
-      vColor = mix(baseColor, uBassColor, mixFactor);
+      vColor = uColor;
 
       // Visual Polish:
       // Points in the center are brighter
       float centerDist = length(pos);
-      vAlpha = 1.0 / (centerDist * 0.5 + 0.1); 
+      // Much gentler falloff so lines stay visible at distance
+      vAlpha = 1.0 / (centerDist * 0.05 + 0.5); 
       
       // Boost alpha with audio
-      vAlpha *= (0.5 + audioValue * 2.0 + uBassLevel);
+      vAlpha *= (1.2 + audioValue * 3.0 + (uAmpX + uAmpY + uAmpZ) / 2.0);
 
       // Dynamic point size
-      gl_PointSize = 4.0 + audioValue * 10.0 + uBassLevel * 5.0; // Pulse size with audio
+      gl_PointSize = 4.0 + audioValue * 10.0 + ((uAmpX + uAmpY + uAmpZ) / 3.0) * 5.0; // Pulse size with audio
       gl_PointSize *= (10.0 / -mvPosition.z);
     }
   `,
@@ -117,12 +118,12 @@ const HarmonicMaterial = shaderMaterial(
         if (dist > 0.5) discard;
 
         strength = 1.0 - (dist * 2.0);
-        strength = pow(strength, 2.0);
       } else {
-        // Constant alpha for lines, maybe slightly dimmer
-        strength = 0.5; 
+        // Constant alpha for lines, max brightness
+        strength = 1.5; 
       }
 
+      gl_FragColor = vec4(vColor, strength * vAlpha);
       gl_FragColor = vec4(vColor, strength * vAlpha);
     }
   `
@@ -182,9 +183,13 @@ extend({ HarmonicMaterial, DenoiserMaterial });
 
 export type HarmonicMaterialType = THREE.ShaderMaterial & {
   uTime: number;
-  uBassFreq: number;
-  uMidFreq: number;
-  uBassLevel: number;
+  uFreqX: number;
+  uFreqY: number;
+  uFreqZ: number;
+  uAmpX: number;
+  uAmpY: number;
+  uAmpZ: number;
+  uColor: THREE.Color;
   uAudioTexture: THREE.Texture;
   uIsLine: number;
 };
@@ -209,15 +214,32 @@ function frequencyToColor(frequency: number): THREE.Color {
   return new THREE.Color().setHSL(hue, 1.0, 0.5);
 }
 
+interface FrequencyBand {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+  color: string;
+  amplitude: number;
+}
+
 interface HarmonicVisualizerProps {
   mode: "points" | "lines";
   analyser?: AnalyserNode | null;
+  band: FrequencyBand;
 }
 
 export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisualizerProps>(
-  ({ mode, analyser }, ref) => {
+  ({ mode, analyser, band }, forwardedRef) => {
     const lineRef = useRef<HarmonicMaterialType>(null);
+    const pointRef = useRef<HarmonicMaterialType>(null);
     const { gl } = useThree();
+
+    // Use forwarded ref if provided, otherwise use internal ref
+    // Note: This simple assignment doesn't handle function refs, but sufficient for now
+    // or just ignore forwardedRef since we don't use it in Scene anymore.
+
+    // ...
 
     // --- GPGPU Setup ---
 
@@ -271,8 +293,9 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
     const targets = useRef({ read: targetA, write: targetB });
     const isFirstFrame = useRef(true);
 
-    useFrame(() => {
+    useFrame((state) => {
       if (!analyser || !denoiserMaterialRef.current) return;
+      const time = state.clock.elapsedTime;
 
       // 1. Update Raw Audio Data
       analyser.getByteFrequencyData(dataArray);
@@ -296,21 +319,76 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
       gl.setRenderTarget(currentRenderTarget);
 
       // 3. Update Main Material
-      // @ts-expect-error - ref is mutable ref object
-      const pointMat = ref?.current;
+      const pointMat = pointRef.current;
       const lineMat = lineRef.current;
+
+      // Calculate sub-frequencies and amplitudes for this band
+      const bufferLength = analyser.frequencyBinCount;
+      // dataArray is already updated above
+
+      const range = band.max - band.min;
+      const third = range / 3;
+
+      // Helper to get average amplitude for a range
+      const getAverageAmp = (startIdx: number, endIdx: number) => {
+        const s = Math.max(0, Math.floor(startIdx));
+        const e = Math.min(bufferLength, Math.floor(endIdx));
+        if (s >= e) return 0;
+
+        let sum = 0;
+        for (let i = s; i < e; i++) {
+          sum += dataArray[i];
+        }
+        return sum / (e - s) / 255.0;
+      };
+
+      // 1. Split band into 3 sub-bands for X, Y, Z axes
+      const startX = band.min;
+      const endX = band.min + third;
+
+      const startY = endX;
+      const endY = band.min + 2 * third;
+
+      const startZ = endY;
+      const endZ = band.max;
+
+      // 2. Calculate Amplitudes for each axis
+      const ampX = getAverageAmp(startX, endX);
+      const ampY = getAverageAmp(startY, endY);
+      const ampZ = getAverageAmp(startZ, endZ);
+      // 3. Calculate Frequencies (using center of each sub-band)
+      // We map the center index to a frequency value
+      const getFreq = (centerIdx: number) => (centerIdx / bufferLength) * 10.0 + 1.0;
+
+      // Modulate frequencies with time and audio amplitude to make the shape morph
+      // Reduced idle movement to be subtle breathing
+      const freqX = getFreq(startX + third / 2) + Math.sin(time * 0.1) * 0.1 + ampX * 2.0;
+      const freqY = getFreq(startY + third / 2) + Math.cos(time * 0.15) * 0.1 + ampY * 2.0;
+      const freqZ = getFreq(startZ + third / 2) + Math.sin(time * 0.2) * 0.1 + ampZ * 2.0;
 
       if (pointMat) {
         pointMat.uAudioTexture = targets.current.write.texture;
+        pointMat.uTime += 0.01; // Increment time
+        pointMat.uFreqX = freqX;
+        pointMat.uFreqY = freqY;
+        pointMat.uFreqZ = freqZ;
+
+        // Independent scaling per axis
+        pointMat.uAmpX = ampX * band.amplitude;
+        pointMat.uAmpY = ampY * band.amplitude;
+        pointMat.uAmpZ = ampZ * band.amplitude;
+
+        pointMat.uColor = new THREE.Color(band.color);
       }
       if (pointMat && lineMat) {
         lineMat.uTime = pointMat.uTime;
-        lineMat.uBassFreq = pointMat.uBassFreq;
-        lineMat.uMidFreq = pointMat.uMidFreq;
-        lineMat.uBassLevel = pointMat.uBassLevel;
-        lineMat.uBassScale = pointMat.uBassScale;
-        lineMat.uMidScale = pointMat.uMidScale;
-        lineMat.uTrebleScale = pointMat.uTrebleScale;
+        lineMat.uFreqX = pointMat.uFreqX;
+        lineMat.uFreqY = pointMat.uFreqY;
+        lineMat.uFreqZ = pointMat.uFreqZ;
+        lineMat.uAmpX = pointMat.uAmpX;
+        lineMat.uAmpY = pointMat.uAmpY;
+        lineMat.uAmpZ = pointMat.uAmpZ;
+        lineMat.uColor = pointMat.uColor;
         lineMat.uAudioTexture = targets.current.write.texture;
       }
 
@@ -344,13 +422,16 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
         {mode === "points" && (
           <points geometry={geometry}>
             <harmonicMaterial
-              ref={ref}
+              ref={pointRef}
               transparent
               depthWrite={false}
               blending={THREE.AdditiveBlending}
-              uBassFreq={1.0}
-              uMidFreq={1.0}
-              uBassLevel={0.0}
+              uFreqX={1.0}
+              uFreqY={1.0}
+              uFreqZ={1.0}
+              uAmpX={0.0}
+              uAmpY={0.0}
+              uAmpZ={0.0}
               uIsLine={0}
             />
           </points>
@@ -358,15 +439,18 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
         {mode === "lines" && (
           <line geometry={geometry}>
             <harmonicMaterial
-              ref={mode === "lines" ? ref : lineRef}
+              ref={mode === "lines" ? pointRef : lineRef}
               transparent
               depthWrite={false}
               blending={THREE.AdditiveBlending}
-              uBassFreq={1.0}
-              uMidFreq={1.0}
-              uBassLevel={0.0}
+              uFreqX={1.0}
+              uFreqY={1.0}
+              uFreqZ={1.0}
+              uAmpX={0.0}
+              uAmpY={0.0}
+              uAmpZ={0.0}
               uIsLine={1}
-              opacity={0.15}
+              opacity={1.0}
             />
           </line>
         )}
