@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Scene from "../components/Scene";
 import { useAudioAnalyzer, getSettingsFromDB, saveSettingsToDB } from "../hooks/useAudioAnalyzer";
-import { Sidebar } from "../components/Sidebar";
+import { Sidebar, FrequencyAnalysisSettings } from "../components/Sidebar";
 import { SpectrumAnalyzer } from "../components/SpectrumAnalyzer";
 
 interface FrequencyBand {
@@ -15,11 +15,43 @@ interface FrequencyBand {
   amplitude: number;
 }
 
+// 4 Frequency Bands matching MultiBandAnalyzer architecture
+// Bass: <250Hz (bins 0-5), Mids: 250-4kHz (bins 6-80), Highs: >4kHz (bins 81-255), Melody: FFT-enhanced
 const DEFAULT_BANDS: FrequencyBand[] = [
-  { id: "bass", label: "Bass", min: 0, max: 10, color: "#ff4d00", amplitude: 1.0 },
-  { id: "mid", label: "Mid", min: 11, max: 80, color: "#33cc33", amplitude: 1.0 },
-  { id: "treble", label: "Treble", min: 81, max: 255, color: "#8033cc", amplitude: 1.0 },
+  { id: "bass", label: "Bass", min: 0, max: 5, color: "#ff0000", amplitude: 1.0 },
+  { id: "mids", label: "Mids", min: 6, max: 80, color: "#00ff00", amplitude: 1.0 },
+  { id: "highs", label: "Highs", min: 81, max: 180, color: "#0088ff", amplitude: 1.0 },
+  { id: "melody", label: "Melody", min: 0, max: 255, color: "#00ffff", amplitude: 0.8 },
 ];
+
+// Presets for quick configuration
+const BAND_PRESETS: Record<string, FrequencyBand[]> = {
+  default: DEFAULT_BANDS,
+  "wide-range": [
+    { id: "bass", label: "Bass", min: 0, max: 8, color: "#ff0000", amplitude: 1.2 },
+    { id: "mids", label: "Mids", min: 9, max: 100, color: "#00ff00", amplitude: 0.9 },
+    { id: "highs", label: "Highs", min: 101, max: 200, color: "#0088ff", amplitude: 1.5 },
+    { id: "melody", label: "Melody", min: 0, max: 255, color: "#00ffff", amplitude: 1.0 },
+  ],
+  "bass-focused": [
+    { id: "bass", label: "Bass", min: 0, max: 15, color: "#ff0000", amplitude: 1.5 },
+    { id: "mids", label: "Mids", min: 16, max: 70, color: "#00ff00", amplitude: 0.6 },
+    { id: "highs", label: "Highs", min: 71, max: 150, color: "#0088ff", amplitude: 0.8 },
+    { id: "melody", label: "Melody", min: 0, max: 255, color: "#00ffff", amplitude: 0.5 },
+  ],
+  "highs-focused": [
+    { id: "bass", label: "Bass", min: 0, max: 3, color: "#ff0000", amplitude: 0.5 },
+    { id: "mids", label: "Mids", min: 4, max: 60, color: "#00ff00", amplitude: 0.7 },
+    { id: "highs", label: "Highs", min: 61, max: 220, color: "#0088ff", amplitude: 2.0 },
+    { id: "melody", label: "Melody", min: 0, max: 255, color: "#00ffff", amplitude: 0.6 },
+  ],
+  balanced: [
+    { id: "bass", label: "Bass", min: 0, max: 6, color: "#ff0000", amplitude: 1.0 },
+    { id: "mids", label: "Mids", min: 7, max: 85, color: "#00ff00", amplitude: 1.0 },
+    { id: "highs", label: "Highs", min: 86, max: 170, color: "#0088ff", amplitude: 1.2 },
+    { id: "melody", label: "Melody", min: 0, max: 255, color: "#00ffff", amplitude: 0.9 },
+  ],
+};
 
 export default function Home() {
   const {
@@ -34,6 +66,9 @@ export default function Home() {
     setGlobalVolume,
     isReady,
     getFrequencyData,
+    startSystemAudio,
+    stopSystemAudio,
+    isSystemAudio,
   } = useAudioAnalyzer();
 
   const [volume, setVolume] = useState(0.5);
@@ -44,16 +79,53 @@ export default function Home() {
     "spectrum"
   );
   const [bands, setBands] = useState<FrequencyBand[]>(DEFAULT_BANDS);
+  const [currentPreset, setCurrentPreset] = useState<string>("default");
+  const [frequencySettings, setFrequencySettings] = useState<FrequencyAnalysisSettings>({
+    useDynamicFreq: true,
+    method: "band_power",
+    baseFrequency: 3.0,
+    multiplier: 5.0,
+    minFreq: 1.0,
+    maxFreq: 12.0,
+    smoothing: 0.1,
+  });
 
-  // Load cached bands on mount
+  // Handle preset changes
+  const handlePresetChange = async (presetName: string) => {
+    const preset = BAND_PRESETS[presetName];
+    if (preset) {
+      // Preserve current colors
+      const newBands = preset.map((presetBand) => {
+        const currentBand = bands.find((b) => b.id === presetBand.id);
+        return currentBand ? { ...presetBand, color: currentBand.color } : presetBand;
+      });
+
+      setBands(newBands);
+      setCurrentPreset(presetName);
+
+      // Save to DB
+      const currentSettings = (await getSettingsFromDB()) || {};
+      await saveSettingsToDB({ ...currentSettings, bands: newBands, currentPreset: presetName });
+    }
+  };
+
+  // Load cached bands and frequency settings on mount
   useEffect(() => {
-    const loadCachedBands = async () => {
+    const loadCachedSettings = async () => {
       const settings = await getSettingsFromDB();
-      if (settings && settings.bands) {
-        setBands(settings.bands);
+      if (settings) {
+        if (settings.bands) {
+          setBands(settings.bands);
+        }
+        if (settings.currentPreset) {
+          setCurrentPreset(settings.currentPreset);
+        }
+        if (settings.frequencySettings) {
+          setFrequencySettings(settings.frequencySettings);
+        }
       }
     };
-    loadCachedBands();
+    loadCachedSettings();
   }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,6 +202,20 @@ export default function Home() {
     });
   };
 
+  const handleFrequencySettingsChange = async (newSettings: Partial<FrequencyAnalysisSettings>) => {
+    setFrequencySettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+
+      // Save to DB
+      (async () => {
+        const currentSettings = (await getSettingsFromDB()) || {};
+        await saveSettingsToDB({ ...currentSettings, frequencySettings: updated });
+      })();
+
+      return updated;
+    });
+  };
+
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
@@ -163,7 +249,12 @@ export default function Home() {
           <div className="absolute top-4 left-4 z-20 flex gap-4">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded-full text-xs font-mono uppercase hover:bg-zinc-800 transition-colors text-zinc-300"
+              disabled={isSystemAudio}
+              className={`px-4 py-2 backdrop-blur border rounded-full text-xs font-mono uppercase transition-colors ${
+                isSystemAudio
+                  ? "bg-zinc-900/40 border-zinc-800 text-zinc-600 cursor-not-allowed"
+                  : "bg-zinc-900/80 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+              }`}
             >
               {audioUrl ? "Change File" : "Select File"}
             </button>
@@ -174,6 +265,17 @@ export default function Home() {
               onChange={handleFileChange}
               className="hidden"
             />
+
+            <button
+              onClick={isSystemAudio ? stopSystemAudio : startSystemAudio}
+              className={`px-4 py-2 backdrop-blur border rounded-full text-xs font-mono uppercase transition-colors ${
+                isSystemAudio
+                  ? "bg-red-900/80 border-red-700 text-red-300 hover:bg-red-800"
+                  : "bg-zinc-900/80 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+              }`}
+            >
+              {isSystemAudio ? "Stop System Audio" : "Use System Audio"}
+            </button>
           </div>
         </div>
 
@@ -186,34 +288,45 @@ export default function Home() {
 
           {/* Playback Controls */}
           <div className="p-4 flex items-center gap-6 justify-center">
-            <button
-              onClick={togglePlay}
-              className="w-12 h-12 flex items-center justify-center rounded-full bg-zinc-100 text-black hover:scale-105 transition-transform"
-            >
-              {isPlaying ? (
-                <div className="w-3 h-3 bg-black gap-1 flex">
-                  <div className="w-1 h-full bg-black"></div>
-                  <div className="w-1 h-full bg-black"></div>
-                </div>
-              ) : (
-                <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-black border-b-[6px] border-b-transparent ml-1"></div>
-              )}
-            </button>
-
-            <div className="flex flex-col gap-1 w-96">
-              <input
-                type="range"
-                min="0"
-                max={duration || 100}
-                value={currentTime}
-                onChange={handleSeek}
-                className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
-              />
-              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
+            {isSystemAudio ? (
+              <div className="flex items-center gap-2 px-4 py-2 bg-red-900/20 border border-red-900/50 rounded-full mr-4">
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-xs font-mono text-red-400 uppercase tracking-wider">
+                  System Audio Live
+                </span>
               </div>
-            </div>
+            ) : (
+              <>
+                <button
+                  onClick={togglePlay}
+                  className="w-12 h-12 flex items-center justify-center rounded-full bg-zinc-100 text-black hover:scale-105 transition-transform"
+                >
+                  {isPlaying ? (
+                    <div className="w-3 h-3 bg-black gap-1 flex">
+                      <div className="w-1 h-full bg-black"></div>
+                      <div className="w-1 h-full bg-black"></div>
+                    </div>
+                  ) : (
+                    <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-black border-b-[6px] border-b-transparent ml-1"></div>
+                  )}
+                </button>
+
+                <div className="flex flex-col gap-1 w-96">
+                  <input
+                    type="range"
+                    min="0"
+                    max={duration || 100}
+                    value={currentTime}
+                    onChange={handleSeek}
+                    className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+                  />
+                  <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono text-zinc-500">VOL</span>
@@ -228,16 +341,18 @@ export default function Home() {
               />
             </div>
 
-            <button
-              onClick={toggleLoop}
-              className={`px-3 py-1 rounded text-xs font-mono uppercase border transition-colors ${
-                isLooping
-                  ? "bg-green-500/20 border-green-500 text-green-500"
-                  : "bg-transparent border-zinc-700 text-zinc-500 hover:border-zinc-500"
-              }`}
-            >
-              Loop
-            </button>
+            {!isSystemAudio && (
+              <button
+                onClick={toggleLoop}
+                className={`px-3 py-1 rounded text-xs font-mono uppercase border transition-colors ${
+                  isLooping
+                    ? "bg-green-500/20 border-green-500 text-green-500"
+                    : "bg-transparent border-zinc-700 text-zinc-500 hover:border-zinc-500"
+                }`}
+              >
+                Loop
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -248,6 +363,11 @@ export default function Home() {
         onBandChange={handleBandChange}
         visualizerType={visualizerType}
         onVisualizerTypeChange={setVisualizerType}
+        frequencySettings={frequencySettings}
+        onFrequencySettingsChange={handleFrequencySettingsChange}
+        presets={BAND_PRESETS}
+        currentPreset={currentPreset}
+        onPresetChange={handlePresetChange}
       />
     </main>
   );

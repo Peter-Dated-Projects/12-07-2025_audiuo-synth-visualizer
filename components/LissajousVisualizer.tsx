@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
-import React, { useMemo, useRef, useEffect } from "react";
+import React, { useMemo } from "react";
+import { calculateBandPowerFrequencies } from "../utils/FrequencyAnalysis";
 
 // --- Shader for a Single Lissajous Figure ---
 const LISSAJOUS_VERTEX_SHADER = `
@@ -9,6 +10,7 @@ uniform float uFreqX;
 uniform float uFreqY;
 uniform float uScale;
 uniform vec3 uColor;
+uniform float uZOffset;
 
 attribute float aIndex; // 0..1
 
@@ -25,11 +27,11 @@ void main() {
     // x = A * sin(a*t + delta)
     // y = B * sin(b*t)
     
-    // Base radius
-    float radius = 8.0 * uScale; 
+    // Base radius - reduced for less visual clutter
+    float radius = 4.5 * uScale; 
     
     // Add a slow rotation to the whole figure so it's not static
-    float rot = uTime * 0.2;
+    float rot = uTime * 0.15;
     
     // Raw Lissajous coords
     float lx = sin(uFreqX * t + PI/2.0);
@@ -38,9 +40,9 @@ void main() {
     // Apply rotation
     float x = (lx * cos(rot) - ly * sin(rot)) * radius;
     float y = (lx * sin(rot) + ly * cos(rot)) * radius;
-    float z = 0.0; // 2D only as requested
+    float z = 0.0; // Base Z position
     
-    vec3 pos = vec3(x, y, z);
+    vec3 pos = vec3(x, y, z + uZOffset);
     
     vColor = uColor;
     
@@ -49,10 +51,13 @@ void main() {
 `;
 
 const LISSAJOUS_FRAGMENT_SHADER = `
+uniform float uScale;
 varying vec3 vColor;
 
 void main() {
-    gl_FragColor = vec4(vColor, 1.0);
+    // Dynamic alpha based on scale for better visual clarity
+    float alpha = clamp(uScale * 0.6 + 0.3, 0.3, 0.9);
+    gl_FragColor = vec4(vColor, alpha);
 }
 `;
 
@@ -66,7 +71,6 @@ interface FrequencyBand {
 }
 
 interface LissajousVisualizerProps {
-  analyser: AnalyserNode;
   bands: FrequencyBand[];
   normalizedData: Float32Array;
 }
@@ -75,15 +79,15 @@ interface LissajousVisualizerProps {
 const LissajousFigure = ({
   band,
   normalizedData,
+  bandIndex,
 }: {
   band: FrequencyBand;
   normalizedData: Float32Array;
+  bandIndex: number;
 }) => {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-
   // Geometry: A line strip with many points
   const geometry = useMemo(() => {
-    const count = 5000; // Resolution
+    const count = 2000; // Resolution - reduced for cleaner visuals
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const indices = new Float32Array(count);
@@ -100,20 +104,33 @@ const LissajousFigure = ({
     return geo;
   }, []);
 
-  // Uniforms
-  const uniforms = useMemo(
-    () => ({
-      uTime: { value: 0 },
-      uFreqX: { value: 3.0 }, // Default to 3
-      uFreqY: { value: 4.0 }, // Default to 4
-      uScale: { value: 0.0 },
-      uColor: { value: new THREE.Color(band.color) },
-    }),
-    [band.color]
-  );
+  // Uniforms - create mutable object outside useMemo
+  const uniforms = {
+    uTime: { value: 0 },
+    uFreqX: { value: 3.0 }, // Default to 3
+    uFreqY: { value: 4.0 }, // Default to 4
+    uScale: { value: 0.0 },
+    uColor: { value: new THREE.Color(band.color) },
+    uZOffset: { value: bandIndex * 1.5 - 1.5 }, // Spread bands in Z: -1.5, 0, 1.5
+  };
+
+  // Create line mesh with material
+  const lineMesh = useMemo(() => {
+    const material = new THREE.ShaderMaterial({
+      vertexShader: LISSAJOUS_VERTEX_SHADER,
+      fragmentShader: LISSAJOUS_FRAGMENT_SHADER,
+      uniforms: uniforms,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+    });
+    return new THREE.Line(geometry, material);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geometry]);
 
   useFrame((state) => {
-    if (!materialRef.current) return;
+    const material = lineMesh.material as THREE.ShaderMaterial;
+    if (!material) return;
 
     // 2. Analyze Band
     const start = Math.max(0, Math.min(band.min, normalizedData.length - 1));
@@ -121,42 +138,34 @@ const LissajousFigure = ({
 
     if (end <= start) return;
 
-    let max1 = -1;
-    let max1Index = -1;
-    let max2 = -1;
-    let max2Index = -1;
-    let sum = 0;
+    // Extract band-specific frequency data
+    const bandData = normalizedData.slice(start, end);
 
-    for (let i = start; i < end; i++) {
-      const val = normalizedData[i];
-      sum += val;
-      if (val > max1) {
-        max2 = max1;
-        max2Index = max1Index;
-        max1 = val;
-        max1Index = i;
-      } else if (val > max2) {
-        max2 = val;
-        max2Index = i;
-      }
-    }
+    // Use Band Power method to calculate frequencies dynamically
+    // Assuming 44100 Hz sample rate and 1024 FFT size (adjust if different)
+    const sampleRate = 44100; // You could pass this as a prop if needed
+    const fftSize = 1024;
 
-    const avg = sum / (end - start);
-    const targetScale = avg * band.amplitude;
+    const result = calculateBandPowerFrequencies(
+      bandData,
+      sampleRate,
+      fftSize,
+      3.0, // Base frequency
+      5.0 // Multiplier
+    );
 
-    // Use indices as frequencies.
-    // We map the raw index to a smaller range (1-12) to get nice integer ratios
-    // that look like classic Lissajous figures.
-    // Using raw indices (e.g. 100) creates too much noise.
-    // Quantize every 20 bins to avoid 1:1 ratios and rapid changes
-    const f1 = max1Index > -1 ? Math.floor(max1Index / 20) + 1 : 3;
-    const f2 = max2Index > -1 ? Math.floor(max2Index / 20) + 1 : 4;
+    // Calculate scale based on the average amplitude of the two frequencies
+    // that are actually used to generate the Lissajous figure
+    // The complexity value from the result represents the overall amplitude (0-1)
+    // We use it directly as it's already the average of all contributing frequencies
+    const targetScale = result.complexity * band.amplitude;
 
-    const targetFreqX = f1;
-    const targetFreqY = f2;
+    // Use calculated frequencies from Band Power method
+    const targetFreqX = result.freqA;
+    const targetFreqY = result.freqB;
 
     // Update Uniforms with Lerp
-    const u = materialRef.current.uniforms;
+    const u = material.uniforms;
     u.uTime.value = state.clock.elapsedTime;
     u.uFreqX.value = THREE.MathUtils.lerp(u.uFreqX.value, targetFreqX, 0.05);
     u.uFreqY.value = THREE.MathUtils.lerp(u.uFreqY.value, targetFreqY, 0.05);
@@ -164,31 +173,19 @@ const LissajousFigure = ({
     u.uColor.value.set(band.color);
   });
 
-  return (
-    <line geometry={geometry}>
-      <shaderMaterial
-        ref={materialRef}
-        vertexShader={LISSAJOUS_VERTEX_SHADER}
-        fragmentShader={LISSAJOUS_FRAGMENT_SHADER}
-        uniforms={uniforms}
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        linewidth={2}
-      />
-    </line>
-  );
+  return <primitive object={lineMesh} />;
 };
 
-export default function LissajousVisualizer({
-  analyser,
-  bands,
-  normalizedData,
-}: LissajousVisualizerProps) {
+export default function LissajousVisualizer({ bands, normalizedData }: LissajousVisualizerProps) {
   return (
     <group>
-      {bands.map((band) => (
-        <LissajousFigure key={band.id} band={band} normalizedData={normalizedData} />
+      {bands.map((band, index) => (
+        <LissajousFigure
+          key={band.id}
+          band={band}
+          normalizedData={normalizedData}
+          bandIndex={index}
+        />
       ))}
     </group>
   );

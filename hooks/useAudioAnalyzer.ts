@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react";
+import { MultiBandAnalyzer, FrequencyBand, BandData } from "../utils/MultiBandAnalyzer";
 
 // --- IndexedDB Helpers ---
 const DB_NAME = "AudioVisualizerDB";
@@ -90,11 +91,16 @@ export const useAudioAnalyzer = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | MediaStreamAudioSourceNode | null>(null);
+  const fileSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const multiBandRef = useRef<MultiBandAnalyzer | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
+  const [isSystemAudio, setIsSystemAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const previousVolumeRef = useRef<number>(1.0);
   const [isReady, setIsReady] = useState(false);
 
   // Load settings on mount
@@ -113,39 +119,177 @@ export const useAudioAnalyzer = () => {
 
   // Initialize Audio Context
   const initAudio = useCallback(() => {
-    if (audioContextRef.current) return;
+    if (!audioContextRef.current) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      audioContextRef.current = ctx;
 
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioContextClass();
-    audioContextRef.current = ctx;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.8;
+      analyserRef.current = analyser;
 
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.8;
-    analyserRef.current = analyser;
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = 1.0;
+      gainNodeRef.current = gainNode;
 
-    const gainNode = ctx.createGain();
-    gainNode.gain.value = 1.0;
-    gainNodeRef.current = gainNode;
+      // Initialize multi-band analyzer
+      const multiBand = new MultiBandAnalyzer(ctx, 2048);
+      multiBandRef.current = multiBand;
+
+      gainNode.connect(ctx.destination);
+    }
+
+    const ctx = audioContextRef.current!;
 
     if (audioRef.current) {
-      // Check if source already exists to avoid error
-      if (!sourceRef.current) {
-        const source = ctx.createMediaElementSource(audioRef.current);
-        source.connect(analyser);
-        analyser.connect(gainNode);
-        gainNode.connect(ctx.destination);
+      // Create file source if needed (only once)
+      if (!fileSourceRef.current) {
+        fileSourceRef.current = ctx.createMediaElementSource(audioRef.current);
+      }
+
+      // Connect file source if not already connected
+      if (sourceRef.current !== fileSourceRef.current) {
+        if (sourceRef.current) {
+          sourceRef.current.disconnect();
+        }
+
+        const source = fileSourceRef.current!;
+        
+        // Connect multi-band analyzer
+        if (multiBandRef.current && gainNodeRef.current && analyserRef.current) {
+          multiBandRef.current.connect(source, gainNodeRef.current);
+          source.connect(analyserRef.current);
+          analyserRef.current.connect(gainNodeRef.current);
+        }
+        
         sourceRef.current = source;
       }
       setIsReady(true);
     }
   }, []);
 
-  const setGlobalVolume = useCallback((volume: number) => {
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = volume;
+  const stopSystemAudio = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    
+    // Disconnect stream source
+    if (sourceRef.current) {
+      sourceRef.current.disconnect();
+    }
+
+    setIsSystemAudio(false);
+    setIsPlaying(false);
+    
+    // Restore file source if available
+    if (fileSourceRef.current && multiBandRef.current && gainNodeRef.current && analyserRef.current) {
+      const source = fileSourceRef.current;
+      multiBandRef.current.connect(source, gainNodeRef.current);
+      source.connect(analyserRef.current);
+      analyserRef.current.connect(gainNodeRef.current);
+      sourceRef.current = source;
+      
+      // Restore volume
+      gainNodeRef.current.gain.value = previousVolumeRef.current;
+    } else {
+      sourceRef.current = null;
+      // Restore volume even if no source
+      if (gainNodeRef.current) {
+        gainNodeRef.current.gain.value = previousVolumeRef.current;
+      }
     }
   }, []);
+
+  const startSystemAudio = useCallback(async () => {
+    try {
+      // Request screen sharing with audio
+      // We request a very small video size since we only care about audio
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: 1, height: 1 },
+        audio: true
+      });
+
+      // Check if we got an audio track
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!audioTrack) {
+        alert("No system audio shared. Please make sure to check 'Share system audio' in the browser dialog.");
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      // Stop existing audio if playing
+      if (audioRef.current) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      }
+
+      // Initialize context if needed
+      if (!audioContextRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioContextClass();
+        audioContextRef.current = ctx;
+
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.8;
+        analyserRef.current = analyser;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 1.0;
+        gainNodeRef.current = gainNode;
+
+        const multiBand = new MultiBandAnalyzer(ctx, 2048);
+        multiBandRef.current = multiBand;
+        
+        gainNode.connect(ctx.destination);
+      }
+
+      const ctx = audioContextRef.current!;
+
+      // Disconnect old source if it exists
+      if (sourceRef.current) {
+        sourceRef.current.disconnect();
+      }
+
+      // Create new source from stream
+      const source = ctx.createMediaStreamSource(stream);
+      sourceRef.current = source;
+
+      // Connect to analyzer chain
+      if (multiBandRef.current && gainNodeRef.current && analyserRef.current) {
+        multiBandRef.current.connect(source, gainNodeRef.current);
+        source.connect(analyserRef.current);
+        analyserRef.current.connect(gainNodeRef.current);
+        
+        // Mute output to prevent feedback loop when using system audio
+        // We set gain to 0 instead of disconnecting, to ensure the audio graph remains active
+        previousVolumeRef.current = gainNodeRef.current.gain.value;
+        gainNodeRef.current.gain.value = 0;
+      }
+
+      streamRef.current = stream;
+      setIsSystemAudio(true);
+      setIsReady(true);
+      setIsPlaying(true);
+
+      // Handle stream ending (user stops sharing)
+      audioTrack.onended = () => {
+        stopSystemAudio();
+      };
+
+    } catch (err) {
+      console.error("Error starting system audio:", err);
+    }
+  }, [stopSystemAudio]);
+
+  const setGlobalVolume = useCallback((volume: number) => {
+    previousVolumeRef.current = volume;
+    if (gainNodeRef.current && !isSystemAudio) {
+      gainNodeRef.current.gain.value = volume;
+    }
+  }, [isSystemAudio]);
 
   // Load cached file on mount
   useEffect(() => {
@@ -258,6 +402,26 @@ export const useAudioAnalyzer = () => {
     return { bass, mid, treble };
   }, []);
 
+  // Get band data for Lissajous visualization
+  const getBandData = useCallback((band: FrequencyBand): BandData => {
+    if (!multiBandRef.current) {
+      return {
+        left: new Float32Array(2048),
+        right: new Float32Array(2048),
+        energy: 0,
+      };
+    }
+    return multiBandRef.current.getBandData(band);
+  }, []);
+
+  // Get all band energies
+  const getBandEnergies = useCallback(() => {
+    if (!multiBandRef.current) {
+      return { full: 0, bass: 0, mids: 0, highs: 0, melody: 0 };
+    }
+    return multiBandRef.current.getBandEnergies();
+  }, []);
+
   // Cleanup
   useEffect(() => {
     return () => {
@@ -267,6 +431,7 @@ export const useAudioAnalyzer = () => {
 
   useEffect(() => {
     return () => {
+      if (multiBandRef.current) multiBandRef.current.dispose();
       if (audioContextRef.current) audioContextRef.current.close();
     };
   }, []);
@@ -281,7 +446,13 @@ export const useAudioAnalyzer = () => {
     togglePlay,
     toggleLoop,
     getFrequencyData,
+    getBandData,
+    getBandEnergies,
     analyser: analyserRef.current,
+    multiBandAnalyzer: multiBandRef.current,
     setGlobalVolume,
+    startSystemAudio,
+    stopSystemAudio,
+    isSystemAudio,
   };
 };

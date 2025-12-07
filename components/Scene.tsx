@@ -103,11 +103,7 @@ function SceneContent({
     <>
       {analyser &&
         (visualizerType === "lissajous" ? (
-          <LissajousVisualizer
-            analyser={analyser}
-            bands={bands}
-            normalizedData={normalizer.normalizedData}
-          />
+          <LissajousVisualizer bands={bands} normalizedData={normalizer.normalizedData} />
         ) : visualizerType === "harmonic" ? (
           <HarmonicVisualizer
             mode={mode}

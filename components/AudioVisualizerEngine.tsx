@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import React, { useEffect, useRef, useMemo } from "react";
-import GUI from "lil-gui";
+import { FrequencyAnalyzer, FrequencyMethod } from "../utils/FrequencyAnalysis";
 
 // --- Shaders ---
 
@@ -262,9 +262,11 @@ class AudioController {
   waveData: Uint8Array;
   freqTexture: THREE.DataTexture;
   waveTexture: THREE.DataTexture;
+  frequencyAnalyzer: FrequencyAnalyzer;
 
   constructor(analyserNode: AnalyserNode) {
     this.analyser = analyserNode;
+    this.frequencyAnalyzer = new FrequencyAnalyzer(analyserNode);
     const fftSize = this.analyser.fftSize;
     const bufferLength = fftSize / 2; // Frequency bin count
 
@@ -292,8 +294,8 @@ class AudioController {
   }
 
   update() {
-    this.analyser.getByteFrequencyData(this.freqData as unknown as Uint8Array);
-    this.analyser.getByteTimeDomainData(this.waveData as unknown as Uint8Array);
+    this.analyser.getByteFrequencyData(this.freqData);
+    this.analyser.getByteTimeDomainData(this.waveData);
 
     this.freqTexture.needsUpdate = true;
     this.waveTexture.needsUpdate = true;
@@ -327,8 +329,6 @@ export default function AudioVisualizerEngine({
   bands,
   audioTexture,
 }: AudioVisualizerEngineProps) {
-  const { gl } = useThree();
-
   // Initialize Controllers
   // We still need AudioController for Waveform data (Time Domain)
   const audioController = useMemo(() => new AudioController(analyser), [analyser]);
@@ -393,6 +393,14 @@ export default function AudioVisualizerEngine({
     lissajousA: 3.0,
     lissajousB: 2.0,
     color: "#00ff88",
+    // Frequency Analysis Settings
+    useDynamicFreq: true,
+    freqMethod: FrequencyMethod.BAND_POWER,
+    freqBaseFrequency: 3.0,
+    freqMultiplier: 5.0,
+    freqMinFreq: 1.0,
+    freqMaxFreq: 12.0,
+    freqSmoothing: 0.1,
   });
 
   // Render Loop
@@ -402,13 +410,34 @@ export default function AudioVisualizerEngine({
     // 1. Update Audio Data (Waveform only really needed now)
     audioController.update();
 
-    // 2. Update Visualizer Uniforms
+    // 2. Calculate Dynamic Frequencies (if enabled)
+    let lissajousA = params.current.lissajousA;
+    let lissajousB = params.current.lissajousB;
+
+    if (params.current.useDynamicFreq) {
+      // Update analyzer config
+      audioController.frequencyAnalyzer.setConfig({
+        method: params.current.freqMethod,
+        baseFrequency: params.current.freqBaseFrequency,
+        multiplier: params.current.freqMultiplier,
+        minFreq: params.current.freqMinFreq,
+        maxFreq: params.current.freqMaxFreq,
+        smoothing: params.current.freqSmoothing,
+      });
+
+      // Analyze current frequency data
+      const result = audioController.frequencyAnalyzer.analyze(audioController.freqData);
+      lissajousA = result.freqA;
+      lissajousB = result.freqB;
+    }
+
+    // 3. Update Visualizer Uniforms
     const mat = materialRef.current;
     mat.uniforms.uFreqTexture.value = audioTexture; // Use normalized texture
     mat.uniforms.uWaveTexture.value = audioController.waveTexture; // Use raw wave
     mat.uniforms.uTime.value = state.clock.elapsedTime;
-    mat.uniforms.uLissajousA.value = params.current.lissajousA;
-    mat.uniforms.uLissajousB.value = params.current.lissajousB;
+    mat.uniforms.uLissajousA.value = lissajousA;
+    mat.uniforms.uLissajousB.value = lissajousB;
 
     // Calculate Band Levels for Lissajous Axes
     // Note: We are using the raw freqData here for levels, which is un-normalized/un-smoothed.
