@@ -14,8 +14,16 @@ import { HarmonicVisualizer, HarmonicMaterialType } from "./HarmonicShader";
 import * as THREE from "three";
 import { useRef, useState, useEffect } from "react";
 
+interface FrequencyBand {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+  color: string;
+}
+
 interface SceneContentProps {
-  getFrequencyData?: () => { bass: number; mid: number; treble: number };
+  bands: FrequencyBand[];
   mode: "points" | "lines";
   analyser?: AnalyserNode | null;
 }
@@ -28,7 +36,7 @@ const PRESETS = {
   PEAK: new THREE.Vector3(10, 12, 15), // Dense/Minor
 };
 
-function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
+function SceneContent({ bands, mode, analyser }: SceneContentProps) {
   const materialRef = useRef<HarmonicMaterialType>(null);
   const { camera } = useThree();
   const initialCameraPos = useRef<THREE.Vector3 | null>(null);
@@ -66,8 +74,26 @@ function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
       materialRef.current.uTime += delta;
 
       // Update audio uniforms if data is available
-      if (getFrequencyData) {
-        const { treble, bass } = getFrequencyData();
+      if (analyser && bands.length >= 3) {
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+
+        const getAverage = (min: number, max: number) => {
+          const start = Math.max(0, Math.min(Math.floor(min), bufferLength - 1));
+          const end = Math.max(0, Math.min(Math.floor(max), bufferLength - 1));
+          if (start >= end) return 0;
+
+          let sum = 0;
+          for (let i = start; i < end; i++) {
+            sum += dataArray[i];
+          }
+          return sum / (end - start) / 255;
+        };
+
+        const bass = getAverage(bands[0].min, bands[0].max);
+        const mid = getAverage(bands[1].min, bands[1].max);
+        const treble = getAverage(bands[2].min, bands[2].max);
 
         // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
         // We map the treble intensity to different complexity levels
@@ -91,6 +117,11 @@ function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
         materialRef.current.uBassFreq = currentRatios.current.x;
         materialRef.current.uMidFreq = currentRatios.current.y;
         materialRef.current.uBassLevel = bass;
+
+        // Update Colors
+        materialRef.current.uBassColor = new THREE.Color(bands[0].color);
+        materialRef.current.uMidColor = new THREE.Color(bands[1].color);
+        materialRef.current.uTrebleColor = new THREE.Color(bands[2].color);
       }
     }
 
@@ -134,12 +165,12 @@ function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
 }
 
 interface SceneProps {
-  getFrequencyData?: () => { bass: number; mid: number; treble: number };
+  bands: FrequencyBand[];
   mode?: "points" | "lines";
   analyser?: AnalyserNode | null;
 }
 
-export default function Scene({ getFrequencyData, mode = "points", analyser }: SceneProps) {
+export default function Scene({ bands, mode = "points", analyser }: SceneProps) {
   return (
     <Canvas
       camera={{ position: [0, 0, 20], fov: 40 }}
@@ -147,7 +178,7 @@ export default function Scene({ getFrequencyData, mode = "points", analyser }: S
       dpr={[1, 2]}
       frameloop="always"
     >
-      <SceneContent getFrequencyData={getFrequencyData} mode={mode} analyser={analyser} />
+      <SceneContent bands={bands} mode={mode} analyser={analyser} />
     </Canvas>
   );
 }

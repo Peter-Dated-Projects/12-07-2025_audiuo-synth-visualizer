@@ -3,24 +3,32 @@
 import { useState, useRef, useEffect } from "react";
 import Scene from "../components/Scene";
 import { useAudioAnalyzer } from "../hooks/useAudioAnalyzer";
+import { Sidebar } from "../components/Sidebar";
+import { SpectrumAnalyzer } from "../components/SpectrumAnalyzer";
+
+interface FrequencyBand {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+  color: string;
+}
+
+const DEFAULT_BANDS: FrequencyBand[] = [
+  { id: "bass", label: "Bass", min: 0, max: 10, color: "#ff4d00" },
+  { id: "mid", label: "Mid", min: 11, max: 80, color: "#33cc33" },
+  { id: "treble", label: "Treble", min: 81, max: 255, color: "#8033cc" },
+];
 
 export default function Home() {
-  const {
-    audioRef,
-    isPlaying,
-    isLooping,
-    audioUrl,
-    loadFile,
-    togglePlay,
-    toggleLoop,
-    getFrequencyData,
-    analyser,
-  } = useAudioAnalyzer();
+  const { audioRef, isPlaying, isLooping, audioUrl, loadFile, togglePlay, toggleLoop, analyser } =
+    useAudioAnalyzer();
 
   const [volume, setVolume] = useState(0.5);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [mode, setMode] = useState<"points" | "lines">("points");
+  const [bands, setBands] = useState<FrequencyBand[]>(DEFAULT_BANDS);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,6 +64,10 @@ export default function Home() {
     }
   }, [volume, audioRef]);
 
+  const handleBandChange = (id: string, newBand: Partial<FrequencyBand>) => {
+    setBands((prev) => prev.map((b) => (b.id === id ? { ...b, ...newBand } : b)));
+  };
+
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
@@ -63,111 +75,80 @@ export default function Home() {
   };
 
   return (
-    <main className="w-screen h-screen bg-black flex flex-col items-center p-8 gap-8 overflow-hidden">
+    <main className="w-screen h-screen bg-black flex overflow-hidden">
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
-        onEnded={() => togglePlay()} // Sync state when audio ends
+        onEnded={() => togglePlay()}
       />
 
-      {/* Visualizer Section - Top 75% */}
-      <div className="w-full h-[70%] flex items-center justify-center relative">
-        <div className="relative aspect-[4/3] h-full max-w-full bg-black rounded-[3rem] overflow-hidden border-4 border-zinc-800 shadow-[0_0_50px_rgba(255,0,0,0.2)]">
-          <div className="absolute inset-0 pointer-events-none z-10 rounded-[3rem] shadow-[inset_0_0_100px_rgba(0,0,0,0.9)]"></div>
-          <Scene getFrequencyData={getFrequencyData} mode={mode} analyser={analyser} />
-        </div>
-      </div>
-
-      {/* Controls Section - Bottom part */}
-      <div className="w-full flex-1 flex flex-col items-center justify-start gap-6 text-zinc-200 z-20">
-        {/* File Input */}
-        <div className="flex flex-col items-center gap-2">
-          <label
-            htmlFor="audio-upload"
-            className="cursor-pointer px-6 py-3 bg-zinc-900 border border-zinc-700 rounded-full hover:bg-zinc-800 hover:border-red-500/50 transition-all duration-300 text-sm font-medium tracking-wider uppercase"
-          >
-            {audioUrl ? "Change Audio File" : "Select Audio File"}
-          </label>
-          <input
-            id="audio-upload"
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-        </div>
-
-        {/* Visualization Mode Selector */}
-        <div className="flex items-center gap-4">
-          <label htmlFor="mode-select" className="text-xs font-mono text-zinc-500 uppercase">
-            Mode
-          </label>
-          <select
-            id="mode-select"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as "points" | "lines")}
-            className="bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2 text-sm font-medium text-zinc-200 focus:outline-none focus:border-red-500/50 transition-all duration-300"
-          >
-            <option value="points">Points</option>
-            <option value="lines">Lines</option>
-          </select>
-        </div>
-
-        {/* Playback Controls */}
-        <div className="flex flex-col items-center gap-4 w-full max-w-md">
-          {/* Progress Bar */}
-          <div className="w-full flex items-center gap-3 text-xs font-mono text-zinc-500">
-            <span>{formatTime(currentTime)}</span>
-            <input
-              type="range"
-              min="0"
-              max={duration || 100}
-              value={currentTime}
-              onChange={handleSeek}
-              disabled={!audioUrl}
-              className="flex-1 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:hover:shadow-[0_0_10px_rgba(255,0,0,0.5)]"
-            />
-            <span>{formatTime(duration)}</span>
+      {/* Left Side: Visualizer + Controls */}
+      <div className="flex-1 flex flex-col h-full relative">
+        {/* Main Visualizer Area */}
+        <div className="flex-1 relative bg-black overflow-hidden">
+          <div className="absolute inset-0 z-0">
+            <Scene bands={bands} mode={mode} analyser={analyser} />
           </div>
 
-          <div className="flex items-center gap-8">
-            {/* Loop Button */}
+          {/* Overlay Controls (Top Left) */}
+          <div className="absolute top-4 left-4 z-20 flex gap-4">
             <button
-              onClick={toggleLoop}
-              disabled={!audioUrl}
-              className={`text-xs font-mono px-3 py-1 rounded-full border transition-all duration-300 ${
-                isLooping
-                  ? "border-red-500 text-red-500 bg-red-500/10 shadow-[0_0_10px_rgba(255,0,0,0.3)]"
-                  : "border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
-              } ${!audioUrl ? "opacity-50 cursor-not-allowed" : ""}`}
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded-full text-xs font-mono uppercase hover:bg-zinc-800 transition-colors text-zinc-300"
             >
-              LOOP
+              {audioUrl ? "Change File" : "Select File"}
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
+        </div>
 
+        {/* Bottom Control Bar & Spectrum */}
+        <div className="h-auto bg-zinc-900/50 border-t border-zinc-800 backdrop-blur-md flex flex-col">
+          {/* Spectrum Analyzer */}
+          <div className="w-full h-[50px] bg-black/50 border-b border-zinc-800 relative">
+            <SpectrumAnalyzer analyser={analyser} bands={bands} onBandChange={handleBandChange} />
+          </div>
+
+          {/* Playback Controls */}
+          <div className="p-4 flex items-center gap-6 justify-center">
             <button
               onClick={togglePlay}
-              disabled={!audioUrl}
-              className={`w-16 h-16 flex items-center justify-center rounded-full border-2 transition-all duration-300 ${
-                audioUrl
-                  ? "border-red-500 text-red-500 hover:bg-red-500/10 hover:shadow-[0_0_20px_rgba(255,0,0,0.4)]"
-                  : "border-zinc-800 text-zinc-800 cursor-not-allowed"
-              }`}
+              className="w-12 h-12 flex items-center justify-center rounded-full bg-zinc-100 text-black hover:scale-105 transition-transform"
             >
               {isPlaying ? (
-                <div className="w-4 h-4 flex gap-1">
-                  <div className="w-1.5 h-full bg-current"></div>
-                  <div className="w-1.5 h-full bg-current"></div>
+                <div className="w-3 h-3 bg-black gap-1 flex">
+                  <div className="w-1 h-full bg-black"></div>
+                  <div className="w-1 h-full bg-black"></div>
                 </div>
               ) : (
-                <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[14px] border-l-current border-b-[8px] border-b-transparent ml-1"></div>
+                <div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-black border-b-[6px] border-b-transparent ml-1"></div>
               )}
             </button>
 
-            {/* Volume Slider */}
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-mono text-zinc-500">VOL</span>
+            <div className="flex flex-col gap-1 w-96">
+              <input
+                type="range"
+                min="0"
+                max={duration || 100}
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-zinc-500">VOL</span>
               <input
                 type="range"
                 min="0"
@@ -175,12 +156,26 @@ export default function Home() {
                 step="0.01"
                 value={volume}
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-32 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-red-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:hover:shadow-[0_0_10px_rgba(255,0,0,0.5)]"
+                className="w-20 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
               />
             </div>
+
+            <button
+              onClick={toggleLoop}
+              className={`px-3 py-1 rounded text-xs font-mono uppercase border transition-colors ${
+                isLooping
+                  ? "bg-green-500/20 border-green-500 text-green-500"
+                  : "bg-transparent border-zinc-700 text-zinc-500 hover:border-zinc-500"
+              }`}
+            >
+              Loop
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Right Sidebar */}
+      <Sidebar bands={bands} onBandChange={handleBandChange} />
     </main>
   );
 }

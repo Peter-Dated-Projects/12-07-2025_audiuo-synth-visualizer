@@ -11,7 +11,10 @@ const HarmonicMaterial = shaderMaterial(
     uTime: 0,
     uBassFreq: 1.0,
     uMidFreq: 1.0,
-    uBassLevel: 0.0, // New uniform for bass intensity
+    uBassLevel: 0.0,
+    uBassColor: new THREE.Color(1.0, 0.3, 0.0),
+    uMidColor: new THREE.Color(0.2, 0.8, 0.2), // Default Greenish
+    uTrebleColor: new THREE.Color(0.5, 0.2, 0.8), // Default Purpleish
     uAudioTexture: new THREE.DataTexture(new Uint8Array(1024), 1024, 1, THREE.RedFormat),
     uIsLine: 0, // 0 for points, 1 for lines
   },
@@ -21,6 +24,9 @@ const HarmonicMaterial = shaderMaterial(
     uniform float uBassFreq;
     uniform float uMidFreq;
     uniform float uBassLevel;
+    uniform vec3 uBassColor;
+    uniform vec3 uMidColor;
+    uniform vec3 uTrebleColor;
     uniform sampler2D uAudioTexture;
     
     attribute float aIndex;
@@ -52,7 +58,7 @@ const HarmonicMaterial = shaderMaterial(
       vec3 pos;
       pos.x = radius * sin(uBassFreq * t);
       pos.y = radius * sin(uMidFreq * t);
-      pos.z = radius * cos(uBassFreq * t); // Using cos(x) vs sin(z) creates the cylinder projection
+      pos.z = 0.0; // Flatten to 2D
       
       // Optional: Twist the whole thing based on time
       // pos.x += sin(uTime) * 2.0;
@@ -62,15 +68,12 @@ const HarmonicMaterial = shaderMaterial(
       gl_Position = projectionMatrix * mvPosition;
 
       // Pass color to fragment shader
-      // Base color (Cool Purples/Blues)
-      vec3 baseColor = vec3(0.5 + 0.5 * sin(t), 0.2, 0.8 + 0.5 * cos(t));
-      
-      // Bass Color (Fiery Orange/Red)
-      vec3 bassColor = vec3(1.0, 0.3, 0.0);
+      // Base color (Treble/Mid mix)
+      vec3 baseColor = mix(uMidColor, uTrebleColor, 0.5 + 0.5 * sin(t));
       
       // Mix based on bass level (squared for sharper reaction)
       float mixFactor = clamp(uBassLevel * uBassLevel * 1.5, 0.0, 1.0);
-      vColor = mix(baseColor, bassColor, mixFactor);
+      vColor = mix(baseColor, uBassColor, mixFactor);
 
       // Visual Polish:
       // Points in the center are brighter
