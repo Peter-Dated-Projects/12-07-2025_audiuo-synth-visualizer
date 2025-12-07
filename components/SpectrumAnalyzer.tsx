@@ -21,6 +21,7 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const smoothedDataRef = useRef<Float32Array | null>(null);
   const [hoveredSeparator, setHoveredSeparator] = useState<{
     bandId: string;
     edge: "min" | "max";
@@ -36,6 +37,12 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
 
     const bufferLength = analyser.frequencyBinCount; // 1024
     const dataArray = new Uint8Array(bufferLength);
+
+    // Initialize smoothed data
+    if (!smoothedDataRef.current || smoothedDataRef.current.length !== bufferLength) {
+      smoothedDataRef.current = new Float32Array(bufferLength);
+    }
+    const smoothedData = smoothedDataRef.current;
 
     let animationId: number;
 
@@ -61,8 +68,15 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
       const barWidth = width / relevantBins;
 
       for (let i = 0; i < relevantBins; i++) {
-        const value = dataArray[i];
-        const percent = value / 255;
+        // Smoothing
+        const targetValue = dataArray[i];
+        smoothedData[i] += (targetValue - smoothedData[i]) * 0.2;
+
+        // Logarithmic Amplitude Scale
+        // Map 0-255 to 0-1 logarithmically
+        const val = Math.max(0, smoothedData[i]);
+        const percent = Math.log10(val + 1) / Math.log10(256);
+
         const barHeight = height * percent;
 
         // Determine which band this bin belongs to

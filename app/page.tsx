@@ -112,7 +112,7 @@ export default function Home() {
         {/* Bottom Control Bar & Spectrum */}
         <div className="h-auto bg-zinc-900/50 border-t border-zinc-800 backdrop-blur-md flex flex-col">
           {/* Spectrum Analyzer */}
-          <div className="w-full h-[50px] bg-black/50 border-b border-zinc-800 relative">
+          <div className="w-full h-[100px] bg-black/50 border-b border-zinc-800 relative">
             <SpectrumAnalyzer analyser={analyser} bands={bands} onBandChange={handleBandChange} />
           </div>
 
