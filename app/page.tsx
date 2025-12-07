@@ -12,12 +12,13 @@ interface FrequencyBand {
   min: number;
   max: number;
   color: string;
+  amplitude: number;
 }
 
 const DEFAULT_BANDS: FrequencyBand[] = [
-  { id: "bass", label: "Bass", min: 0, max: 10, color: "#ff4d00" },
-  { id: "mid", label: "Mid", min: 11, max: 80, color: "#33cc33" },
-  { id: "treble", label: "Treble", min: 81, max: 255, color: "#8033cc" },
+  { id: "bass", label: "Bass", min: 0, max: 10, color: "#ff4d00", amplitude: 1.0 },
+  { id: "mid", label: "Mid", min: 11, max: 80, color: "#33cc33", amplitude: 1.0 },
+  { id: "treble", label: "Treble", min: 81, max: 255, color: "#8033cc", amplitude: 1.0 },
 ];
 
 export default function Home() {

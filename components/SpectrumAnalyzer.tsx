@@ -6,6 +6,7 @@ interface FrequencyBand {
   min: number;
   max: number;
   color: string;
+  amplitude: number;
 }
 
 interface SpectrumAnalyzerProps {
@@ -72,21 +73,23 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
         const targetValue = dataArray[i];
         smoothedData[i] += (targetValue - smoothedData[i]) * 0.2;
 
-        // Logarithmic Amplitude Scale
-        // Map 0-255 to 0-1 logarithmically
-        const val = Math.max(0, smoothedData[i]);
-        const percent = Math.log10(val + 1) / Math.log10(256);
-
-        const barHeight = height * percent;
-
         // Determine which band this bin belongs to
         let color = "#333"; // Default gray
+        let amplitude = 1.0;
         for (const band of bands) {
           if (i >= band.min && i <= band.max) {
             color = band.color;
+            amplitude = band.amplitude;
             break;
           }
         }
+
+        // Logarithmic Amplitude Scale
+        // Map 0-255 to 0-1 logarithmically
+        const val = Math.max(0, smoothedData[i]);
+        const percent = (Math.log10(val + 1) / Math.log10(256)) * amplitude;
+
+        const barHeight = Math.min(height, height * percent);
 
         ctx.fillStyle = color;
         ctx.fillRect(i * barWidth, height - barHeight, barWidth, barHeight);

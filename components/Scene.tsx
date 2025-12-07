@@ -20,6 +20,7 @@ interface FrequencyBand {
   min: number;
   max: number;
   color: string;
+  amplitude: number;
 }
 
 interface SceneContentProps {
@@ -91,9 +92,9 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
           return sum / (end - start) / 255;
         };
 
-        const bass = getAverage(bands[0].min, bands[0].max);
-        const mid = getAverage(bands[1].min, bands[1].max);
-        const treble = getAverage(bands[2].min, bands[2].max);
+        const bass = getAverage(bands[0].min, bands[0].max) * bands[0].amplitude;
+        const mid = getAverage(bands[1].min, bands[1].max) * bands[1].amplitude;
+        const treble = getAverage(bands[2].min, bands[2].max) * bands[2].amplitude;
 
         // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
         // We map the treble intensity to different complexity levels
