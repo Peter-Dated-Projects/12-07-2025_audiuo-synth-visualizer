@@ -1,9 +1,9 @@
 "use client";
 
 import * as THREE from "three";
-import { extend } from "@react-three/fiber";
+import { extend, useFrame } from "@react-three/fiber";
 import { shaderMaterial } from "@react-three/drei";
-import { useMemo, forwardRef } from "react";
+import { useMemo, forwardRef, useRef } from "react";
 
 // Shader Material
 const HarmonicMaterial = shaderMaterial(
@@ -15,6 +15,7 @@ const HarmonicMaterial = shaderMaterial(
     uBass: 0,
     uMid: 0,
     uTreble: 0,
+    uIsLine: 0, // 0 for points, 1 for lines
   },
   // Vertex Shader
   `
@@ -77,7 +78,7 @@ const HarmonicMaterial = shaderMaterial(
       // Size attenuation
       // Modulate size with Mid frequencies
       float sizeMod = 1.0 + uMid * 2.0;
-      gl_PointSize = (25.0 * sizeMod / -mvPosition.z);
+      gl_PointSize = (100.0 * sizeMod / -mvPosition.z);
 
       // Alpha based on depth or just constant
       vAlpha = 0.6 + 0.4 * sin(t * 5.0 + uTime * 2.0);
@@ -89,17 +90,25 @@ const HarmonicMaterial = shaderMaterial(
   // Fragment Shader
   `
     uniform vec3 uColor;
+    uniform float uIsLine;
     varying float vAlpha;
 
     void main() {
-      // Soft circular glow
-      vec2 coord = gl_PointCoord - vec2(0.5);
-      float dist = length(coord);
-      
-      if (dist > 0.5) discard;
+      float strength = 1.0;
 
-      float strength = 1.0 - (dist * 2.0);
-      strength = pow(strength, 2.0);
+      if (uIsLine < 0.5) {
+        // Soft circular glow for points
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        
+        if (dist > 0.5) discard;
+
+        strength = 1.0 - (dist * 2.0);
+        strength = pow(strength, 2.0);
+      } else {
+        // Constant alpha for lines, maybe slightly dimmer
+        strength = 0.5; 
+      }
 
       gl_FragColor = vec4(uColor, strength * vAlpha);
     }
@@ -116,6 +125,7 @@ export type HarmonicMaterialType = THREE.ShaderMaterial & {
   uBass: number;
   uMid: number;
   uTreble: number;
+  uIsLine: number;
 };
 
 declare module "@react-three/fiber" {
@@ -131,6 +141,22 @@ function frequencyToColor(frequency: number): THREE.Color {
 }
 
 export const HarmonicVisualizer = forwardRef<HarmonicMaterialType>((_, ref) => {
+  const lineRef = useRef<HarmonicMaterialType>(null);
+
+  // Sync line material uniforms with point material
+  useFrame(() => {
+    // @ts-expect-error - ref is mutable ref object
+    const pointMat = ref?.current;
+    const lineMat = lineRef.current;
+
+    if (pointMat && lineMat) {
+      lineMat.uTime = pointMat.uTime;
+      lineMat.uBass = pointMat.uBass;
+      lineMat.uMid = pointMat.uMid;
+      lineMat.uTreble = pointMat.uTreble;
+    }
+  });
+
   // Generate points
   const count = 20000; // Number of particles
   const geometry = useMemo(() => {
@@ -151,17 +177,33 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType>((_, ref) => {
   }, []);
 
   return (
-    <points geometry={geometry}>
-      <harmonicMaterial
-        ref={ref}
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        uColor={frequencyToColor(200)}
-        uRatios={new THREE.Vector4(4, 6, 10, 12)}
-        uRatio5={15}
-      />
-    </points>
+    <group>
+      <points geometry={geometry}>
+        <harmonicMaterial
+          ref={ref}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          uColor={frequencyToColor(200)}
+          uRatios={new THREE.Vector4(4, 6, 10, 12)}
+          uRatio5={15}
+          uIsLine={0}
+        />
+      </points>
+      <line geometry={geometry}>
+        <harmonicMaterial
+          ref={lineRef}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          uColor={frequencyToColor(200)}
+          uRatios={new THREE.Vector4(4, 6, 10, 12)}
+          uRatio5={15}
+          uIsLine={1}
+          opacity={0.15}
+        />
+      </line>
+    </group>
   );
 });
 

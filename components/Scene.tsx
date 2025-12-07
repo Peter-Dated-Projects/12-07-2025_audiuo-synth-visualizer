@@ -111,7 +111,7 @@ interface SceneProps {
 export default function Scene({ getFrequencyData }: SceneProps) {
   return (
     <Canvas
-      camera={{ position: [0, 0, 50], fov: 40 }}
+      camera={{ position: [0, 0, 30], fov: 40 }}
       style={{ background: "black", width: "100%", height: "100%" }}
       dpr={[1, 2]}
       frameloop="always"
