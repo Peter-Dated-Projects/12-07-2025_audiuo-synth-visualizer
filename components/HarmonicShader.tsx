@@ -9,18 +9,20 @@ import { useMemo, forwardRef, useRef } from "react";
 const HarmonicMaterial = shaderMaterial(
   {
     uTime: 0,
-    uColor: new THREE.Color(1.0, 0.1, 0.1), // Red color
-    uCurrentRatios: new THREE.Vector3(1, 1, 1), // The "interpolated" smooth ratio from JS
+    uBassFreq: 1.0,
+    uMidFreq: 1.0,
     uAudioTexture: new THREE.DataTexture(new Uint8Array(1024), 1024, 1, THREE.RedFormat),
     uIsLine: 0, // 0 for points, 1 for lines
   },
   // Vertex Shader
   `
     uniform float uTime;
-    uniform vec3 uCurrentRatios;
+    uniform float uBassFreq;
+    uniform float uMidFreq;
     uniform sampler2D uAudioTexture;
     
     attribute float aIndex;
+    varying vec3 vColor;
     varying float vAlpha;
 
     #define PI 3.14159265359
@@ -28,12 +30,9 @@ const HarmonicMaterial = shaderMaterial(
     void main() {
       // 1. Normalize index to a "time" variable t (0.0 to 1.0 along the line)
       // We multiply by 2*PI * loops to wrap it around multiple times
-      // 20000.0 is the vertex count
       float t = (aIndex / 20000.0) * 6.28318 * 10.0;
 
       // 2. Sample Audio Data
-      // We pick a spot in the texture based on 't' or specific frequencies.
-      // .r gets the red channel (magnitude 0.0 to 1.0)
       // We map the index to the treble range in UV space (approx 0.1 to 0.25).
       float minUV = 81.0 / 1024.0;
       float maxUV = 255.0 / 1024.0;
@@ -42,26 +41,23 @@ const HarmonicMaterial = shaderMaterial(
       float audioValue = texture2D(uAudioTexture, vec2(freqUV, 0.0)).r;
       
       // 3. Lissajous Parametric Equations
-      // x = A * sin(a*t + delta)
-      // y = B * sin(b*t)
-      // z = C * sin(c*t)
-      
       // We use audioValue to modulate the AMPLITUDE (Radius)
       float radius = 5.0 + (audioValue * 3.0); 
       
       vec3 pos;
-      // We use uCurrentRatios for frequencies (a, b, c)
-      // Removed uTime rotation factors to keep the orientation stable
-      pos.x = radius * sin(uCurrentRatios.x * t);
-      pos.y = radius * sin(uCurrentRatios.y * t);
-      pos.z = radius * cos(uCurrentRatios.x * t); 
+      pos.x = radius * sin(uBassFreq * t);
+      pos.y = radius * sin(uMidFreq * t);
+      pos.z = radius * cos(uBassFreq * t); // Using cos(x) vs sin(z) creates the cylinder projection
       
       // Optional: Twist the whole thing based on time
-      // pos.x += sin(uTime) * 2.0; // Removed twist
+      // pos.x += sin(uTime) * 2.0;
 
       // 4. Set final position
       vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
       gl_Position = projectionMatrix * mvPosition;
+
+      // Pass color to fragment shader
+      vColor = vec3(0.5 + 0.5 * sin(t), 0.2, 0.8 + 0.5 * cos(t));
 
       // Visual Polish:
       // Points in the center are brighter
@@ -78,7 +74,7 @@ const HarmonicMaterial = shaderMaterial(
   `,
   // Fragment Shader
   `
-    uniform vec3 uColor;
+    varying vec3 vColor;
     uniform float uIsLine;
     varying float vAlpha;
 
@@ -99,7 +95,7 @@ const HarmonicMaterial = shaderMaterial(
         strength = 0.5; 
       }
 
-      gl_FragColor = vec4(uColor, strength * vAlpha);
+      gl_FragColor = vec4(vColor, strength * vAlpha);
     }
   `
 );
@@ -108,8 +104,8 @@ extend({ HarmonicMaterial });
 
 export type HarmonicMaterialType = THREE.ShaderMaterial & {
   uTime: number;
-  uColor: THREE.Color;
-  uCurrentRatios: THREE.Vector3;
+  uBassFreq: number;
+  uMidFreq: number;
   uAudioTexture: THREE.Texture;
   uIsLine: number;
 };
@@ -167,7 +163,8 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
 
       if (pointMat && lineMat) {
         lineMat.uTime = pointMat.uTime;
-        lineMat.uCurrentRatios = pointMat.uCurrentRatios;
+        lineMat.uBassFreq = pointMat.uBassFreq;
+        lineMat.uMidFreq = pointMat.uMidFreq;
         lineMat.uAudioTexture = audioTexture;
       }
     });
@@ -200,8 +197,8 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
               transparent
               depthWrite={false}
               blending={THREE.AdditiveBlending}
-              uColor={frequencyToColor(200)}
-              uCurrentRatios={new THREE.Vector3(1, 1, 1)}
+              uBassFreq={1.0}
+              uMidFreq={1.0}
               uAudioTexture={audioTexture}
               uIsLine={0}
             />
@@ -214,8 +211,8 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
               transparent
               depthWrite={false}
               blending={THREE.AdditiveBlending}
-              uColor={frequencyToColor(200)}
-              uCurrentRatios={new THREE.Vector3(1, 1, 1)}
+              uBassFreq={1.0}
+              uMidFreq={1.0}
               uAudioTexture={audioTexture}
               uIsLine={1}
               opacity={0.15}

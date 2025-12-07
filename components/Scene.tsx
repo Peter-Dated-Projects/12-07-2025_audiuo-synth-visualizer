@@ -87,7 +87,9 @@ function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
         currentRatios.current.lerp(targetVector.current, speed);
 
         // 4. UPDATE SHADER
-        materialRef.current.uCurrentRatios = currentRatios.current;
+        // Map x -> BassFreq, y -> MidFreq
+        materialRef.current.uBassFreq = currentRatios.current.x;
+        materialRef.current.uMidFreq = currentRatios.current.y;
       }
     }
 
