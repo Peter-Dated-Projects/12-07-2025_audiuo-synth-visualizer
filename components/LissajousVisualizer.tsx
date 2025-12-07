@@ -1,16 +1,14 @@
 import * as THREE from "three";
-import { useFrame, useThree } from "@react-three/fiber";
-import React, { useEffect, useRef, useMemo } from "react";
-import GUI from "lil-gui";
+import { useFrame } from "@react-three/fiber";
+import React, { useMemo, useRef, useEffect } from "react";
 
+// --- Shader for a Single Lissajous Figure ---
 const LISSAJOUS_VERTEX_SHADER = `
 uniform float uTime;
-uniform float uBass;
-uniform float uMid;
-uniform float uTreble;
-uniform float uA; // Parameter a
-uniform float uB; // Parameter b
-uniform float uDelta; // Phase shift
+uniform float uFreqX;
+uniform float uFreqY;
+uniform float uScale;
+uniform vec3 uColor;
 
 attribute float aIndex; // 0..1
 
@@ -19,35 +17,33 @@ varying vec3 vColor;
 #define PI 3.14159265359
 
 void main() {
-    float t = aIndex * 2.0 * PI * 10.0; // Wrap multiple times
+    // Map index to parameter t
+    // We want enough loops to close the shape if the ratio is complex.
+    float t = aIndex * 2.0 * PI * 100.0; 
     
-    // Lissajous Parametric Equations
+    // Lissajous Parametric Equations (2D)
     // x = A * sin(a*t + delta)
     // y = B * sin(b*t)
     
-    // Modulate amplitude with audio
-    float ampBase = 5.0;
-    float ampX = ampBase + uBass * 5.0;
-    float ampY = ampBase + uMid * 5.0;
-    float ampZ = ampBase + uTreble * 5.0; // Use Z for 3D effect
+    // Base radius
+    float radius = 8.0 * uScale; 
     
-    // Add some movement to parameters
-    float timeOffset = uTime * 0.5;
+    // Add a slow rotation to the whole figure so it's not static
+    float rot = uTime * 0.2;
     
-    float x = ampX * sin(uA * t + uDelta + timeOffset);
-    float y = ampY * sin(uB * t);
-    float z = ampZ * sin((uA + uB) * 0.5 * t + timeOffset); // 3D variation
+    // Raw Lissajous coords
+    float lx = sin(uFreqX * t + PI/2.0);
+    float ly = sin(uFreqY * t);
+    
+    // Apply rotation
+    float x = (lx * cos(rot) - ly * sin(rot)) * radius;
+    float y = (lx * sin(rot) + ly * cos(rot)) * radius;
+    float z = 0.0; // 2D only as requested
     
     vec3 pos = vec3(x, y, z);
     
-    // Color based on position/index
-    vec3 color1 = vec3(1.0, 0.2, 0.2); // Red
-    vec3 color2 = vec3(0.2, 0.5, 1.0); // Blue
-    vColor = mix(color1, color2, sin(t * 0.5) * 0.5 + 0.5);
+    vColor = uColor;
     
-    // Add brightness based on audio
-    vColor += vec3(uBass + uMid + uTreble) * 0.2;
-
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }
 `;
@@ -60,31 +56,39 @@ void main() {
 }
 `;
 
-interface LissajousVisualizerProps {
-  analyser: AnalyserNode;
+interface FrequencyBand {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+  color: string;
+  amplitude: number;
 }
 
-export default function LissajousVisualizer({ analyser }: LissajousVisualizerProps) {
-  const { gl } = useThree();
-  
-  // Audio Data Arrays
-  const dataArrays = useMemo(() => {
-    const bufferLength = analyser.frequencyBinCount;
-    return {
-      freq: new Uint8Array(bufferLength),
-      wave: new Uint8Array(analyser.fftSize)
-    };
-  }, [analyser]);
+interface LissajousVisualizerProps {
+  analyser: AnalyserNode;
+  bands: FrequencyBand[];
+}
 
-  // Geometry
+// --- Sub-component for a single band's figure ---
+const LissajousFigure = ({ analyser, band }: { analyser: AnalyserNode; band: FrequencyBand }) => {
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+
+  // Local data array for this component
+  const dataArray = useMemo(() => new Uint8Array(analyser.frequencyBinCount), [analyser]);
+
+  // Geometry: A line strip with many points
   const geometry = useMemo(() => {
-    const count = 10000; // Number of points in the line
+    const count = 5000; // Resolution
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const indices = new Float32Array(count);
 
     for (let i = 0; i < count; i++) {
       indices[i] = i / (count - 1);
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = 0;
+      positions[i * 3 + 2] = 0;
     }
 
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -92,100 +96,95 @@ export default function LissajousVisualizer({ analyser }: LissajousVisualizerPro
     return geo;
   }, []);
 
-  // Material
-  const material = useMemo(() => {
-    return new THREE.ShaderMaterial({
-      vertexShader: LISSAJOUS_VERTEX_SHADER,
-      fragmentShader: LISSAJOUS_FRAGMENT_SHADER,
-      uniforms: {
-        uTime: { value: 0 },
-        uBass: { value: 0 },
-        uMid: { value: 0 },
-        uTreble: { value: 0 },
-        uA: { value: 3.0 },
-        uB: { value: 2.0 },
-        uDelta: { value: 1.57 }, // PI/2
-      },
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-  }, []);
-
-  // Mesh
-  const mesh = useMemo(() => {
-    return new THREE.Line(geometry, material);
-  }, [geometry, material]);
-
-  const materialRef = useRef<THREE.ShaderMaterial>(material);
-  const params = useRef({
-    a: 3.0,
-    b: 2.0,
-    delta: Math.PI / 2,
-    speed: 0.5
-  });
-
-  // GUI
-  useEffect(() => {
-    const container = document.getElementById("visualizer-controls-container");
-    // Clear previous controls if any (simple way, though might conflict if multiple components use it)
-    // Ideally we'd manage this better, but for now:
-    if (container) container.innerHTML = ''; 
-
-    const gui = new GUI({
-      title: "Lissajous Settings",
-      container: container || undefined,
-    });
-
-    if (container) {
-      gui.domElement.style.position = "relative";
-      gui.domElement.style.width = "100%";
-    }
-
-    gui.add(params.current, "a", 1, 10, 1).name("Freq X (a)");
-    gui.add(params.current, "b", 1, 10, 1).name("Freq Y (b)");
-    gui.add(params.current, "delta", 0, Math.PI * 2).name("Phase (delta)");
-    gui.add(params.current, "speed", 0, 2).name("Animation Speed");
-
-    return () => {
-      gui.destroy();
-    };
-  }, []);
+  // Uniforms
+  const uniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uFreqX: { value: 3.0 }, // Default to 3
+      uFreqY: { value: 4.0 }, // Default to 4
+      uScale: { value: 0.0 },
+      uColor: { value: new THREE.Color(band.color) },
+    }),
+    [band.color]
+  );
 
   useFrame((state) => {
-    // Analyze Audio
-    analyser.getByteFrequencyData(dataArrays.freq);
-    
-    // Calculate average bands
-    // Bass: 0-10
-    // Mid: 11-100
-    // Treble: 101-255 (approx)
-    
-    let bassSum = 0, midSum = 0, trebleSum = 0;
-    let bassCount = 0, midCount = 0, trebleCount = 0;
-    
-    for(let i=0; i<dataArrays.freq.length; i++) {
-        const val = dataArrays.freq[i] / 255.0;
-        if(i < 10) { bassSum += val; bassCount++; }
-        else if(i < 100) { midSum += val; midCount++; }
-        else { trebleSum += val; trebleCount++; }
-    }
-    
-    const bass = bassCount > 0 ? bassSum / bassCount : 0;
-    const mid = midCount > 0 ? midSum / midCount : 0;
-    const treble = trebleCount > 0 ? trebleSum / trebleCount : 0;
+    if (!materialRef.current) return;
 
-    // Update Uniforms
-    const mat = materialRef.current;
-    mat.uniforms.uTime.value = state.clock.elapsedTime * params.current.speed;
-    mat.uniforms.uBass.value = THREE.MathUtils.lerp(mat.uniforms.uBass.value, bass, 0.1);
-    mat.uniforms.uMid.value = THREE.MathUtils.lerp(mat.uniforms.uMid.value, mid, 0.1);
-    mat.uniforms.uTreble.value = THREE.MathUtils.lerp(mat.uniforms.uTreble.value, treble, 0.1);
-    
-    mat.uniforms.uA.value = params.current.a;
-    mat.uniforms.uB.value = params.current.b;
-    mat.uniforms.uDelta.value = params.current.delta;
+    // 1. Get Data
+    analyser.getByteFrequencyData(dataArray);
+
+    // 2. Analyze Band
+    const start = Math.max(0, Math.min(band.min, dataArray.length - 1));
+    const end = Math.max(start, Math.min(band.max, dataArray.length));
+
+    if (end <= start) return;
+
+    let max1 = -1;
+    let max1Index = -1;
+    let max2 = -1;
+    let max2Index = -1;
+    let sum = 0;
+
+    for (let i = start; i < end; i++) {
+      const val = dataArray[i];
+      sum += val;
+      if (val > max1) {
+        max2 = max1;
+        max2Index = max1Index;
+        max1 = val;
+        max1Index = i;
+      } else if (val > max2) {
+        max2 = val;
+        max2Index = i;
+      }
+    }
+
+    const avg = sum / (end - start);
+    const targetScale = (avg / 255.0) * band.amplitude;
+
+    // Use indices as frequencies.
+    // We map the raw index to a smaller range (1-12) to get nice integer ratios
+    // that look like classic Lissajous figures.
+    // Using raw indices (e.g. 100) creates too much noise.
+    // Quantize every 20 bins to avoid 1:1 ratios and rapid changes
+    const f1 = max1Index > -1 ? Math.floor(max1Index / 20) + 1 : 3;
+    const f2 = max2Index > -1 ? Math.floor(max2Index / 20) + 1 : 4;
+
+    const targetFreqX = f1;
+    const targetFreqY = f2;
+
+    // Update Uniforms with Lerp
+    const u = materialRef.current.uniforms;
+    u.uTime.value = state.clock.elapsedTime;
+    u.uFreqX.value = THREE.MathUtils.lerp(u.uFreqX.value, targetFreqX, 0.05);
+    u.uFreqY.value = THREE.MathUtils.lerp(u.uFreqY.value, targetFreqY, 0.05);
+    u.uScale.value = THREE.MathUtils.lerp(u.uScale.value, targetScale, 0.1);
+    u.uColor.value.set(band.color);
   });
 
-  return <primitive object={mesh} />;
+  return (
+    <line geometry={geometry}>
+      <shaderMaterial
+        ref={materialRef}
+        vertexShader={LISSAJOUS_VERTEX_SHADER}
+        fragmentShader={LISSAJOUS_FRAGMENT_SHADER}
+        uniforms={uniforms}
+        transparent
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        linewidth={2}
+      />
+    </line>
+  );
+};
+
+export default function LissajousVisualizer({ analyser, bands }: LissajousVisualizerProps) {
+  return (
+    <group>
+      {bands.map((band) => (
+        <LissajousFigure key={band.id} analyser={analyser} band={band} />
+      ))}
+    </group>
+  );
 }

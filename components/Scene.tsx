@@ -33,14 +33,6 @@ interface SceneContentProps {
   getFrequencyData?: () => { bass: number; mid: number; treble: number };
 }
 
-// 1. DEFINE THE "BEAUTIFUL" PRESETS
-const PRESETS = {
-  IDLE: new THREE.Vector3(1, 1, 1), // Circle
-  BASS: new THREE.Vector3(3, 4, 5), // Major Triad
-  MID: new THREE.Vector3(5, 7, 9), // Complex/Jazz
-  PEAK: new THREE.Vector3(10, 12, 15), // Dense/Minor
-};
-
 function SceneContent({
   bands,
   mode,
@@ -50,11 +42,6 @@ function SceneContent({
 }: SceneContentProps) {
   const { camera } = useThree();
   const initialCameraPos = useRef<THREE.Vector3 | null>(null);
-
-  // Harmonic Visualizer Refs
-  const materialRef = useRef<HarmonicMaterialType>(null);
-  const currentRatios = useRef(new THREE.Vector3(1, 1, 1));
-  const targetVector = useRef(PRESETS.IDLE);
 
   // Capture initial camera position once
   useEffect(() => {
@@ -80,33 +67,6 @@ function SceneContent({
   }));
 
   useFrame((state, delta) => {
-    // Update Harmonic Shader if active
-    if (visualizerType === "harmonic" && materialRef.current) {
-      materialRef.current.uTime += delta;
-
-      // Update audio uniforms if data is available
-      if (getFrequencyData) {
-        const { treble } = getFrequencyData();
-
-        // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
-        if (treble < 0.15) {
-          targetVector.current = PRESETS.IDLE;
-        } else if (treble < 0.45) {
-          targetVector.current = PRESETS.MID; // Moderate complexity
-        } else {
-          targetVector.current = PRESETS.PEAK; // High complexity
-        }
-
-        // 3. SMOOTHLY INTERPOLATE (LERP)
-        const speed = 0.05;
-        currentRatios.current.lerp(targetVector.current, speed);
-
-        // 4. UPDATE SHADER
-        materialRef.current.uBassFreq = currentRatios.current.x;
-        materialRef.current.uMidFreq = currentRatios.current.y;
-      }
-    }
-
     // Smooth camera movement with random offsets
     const t = state.clock.elapsedTime;
     const { x, y } = movementParams;
@@ -132,9 +92,9 @@ function SceneContent({
     <>
       {analyser &&
         (visualizerType === "lissajous" ? (
-          <LissajousVisualizer analyser={analyser} />
+          <LissajousVisualizer analyser={analyser} bands={bands} />
         ) : visualizerType === "harmonic" ? (
-          <HarmonicVisualizer ref={materialRef} mode={mode} analyser={analyser} />
+          <HarmonicVisualizer mode={mode} analyser={analyser} bands={bands} />
         ) : (
           <AudioVisualizerEngine analyser={analyser} bands={bands} />
         ))}

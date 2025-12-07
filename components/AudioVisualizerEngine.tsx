@@ -389,44 +389,6 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
     color: "#00ff88",
   });
 
-  // Setup GUI
-  useEffect(() => {
-    const container = document.getElementById("visualizer-controls-container");
-    if (container) container.innerHTML = "";
-
-    const gui = new GUI({
-      title: "Visualizer Settings",
-      container: container || undefined,
-    });
-
-    if (container) {
-      gui.domElement.style.position = "relative";
-      gui.domElement.style.width = "100%";
-      gui.domElement.style.top = "auto";
-      gui.domElement.style.right = "auto";
-    }
-
-    gui
-      .add(params.current, "mode", {
-        "Lissajous 3D (Freq)": 0,
-        "Phase Shift (Wave)": 1,
-        "Derivative (Wave)": 2,
-      })
-      .onChange((v: number) => {
-        materialRef.current.uniforms.uMode.value = v;
-      });
-
-    gui.add(params.current, "noiseFloor", 0, 0.5).name("Noise Floor");
-
-    const lissajousFolder = gui.addFolder("Lissajous Settings");
-    lissajousFolder.add(params.current, "lissajousA", 1, 10, 1).name("Freq X (A)");
-    lissajousFolder.add(params.current, "lissajousB", 1, 10, 1).name("Freq Y (B)");
-
-    return () => {
-      gui.destroy();
-    };
-  }, []);
-
   // Render Loop
   useFrame((state) => {
     if (!audioController || !smoother) return;
