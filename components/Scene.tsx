@@ -10,7 +10,7 @@ import {
   ChromaticAberration,
 } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
-import { HarmonicVisualizer, HarmonicMaterialType } from "./HarmonicShader";
+import AudioVisualizerEngine from "./AudioVisualizerEngine";
 import * as THREE from "three";
 import { useRef, useState, useEffect } from "react";
 
@@ -80,9 +80,7 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
 
   return (
     <>
-      {bands.map((band) => (
-        <HarmonicVisualizer key={band.id} mode={mode} analyser={analyser} band={band} />
-      ))}
+      {analyser && <AudioVisualizerEngine analyser={analyser} />}
       <EffectComposer>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />
         <Scanline blendFunction={BlendFunction.OVERLAY} density={1.25} />

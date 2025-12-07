@@ -49,12 +49,10 @@ const HarmonicMaterial = shaderMaterial(
       
       float rawAudio = texture2D(uAudioTexture, vec2(logIndex, 0.0)).r;
       
-      // Gamma Curve (Punchy Fix)
-      float sharpAudio = pow(rawAudio, 2.5);
-
       // Amplitude Compensation (Boost Highs)
-      float boost = 1.0 + (normalizedIndex * 3.0);
-      float audioValue = sharpAudio * boost;
+      // We multiply high frequencies by 3x or 4x to match the bass energy
+      float boost = 1.0 + (logIndex * 3.0);
+      float audioValue = rawAudio * boost;
       
       // 3. Lissajous Parametric Equations
       // x(t) = Ax * sin(wx * t + phi)

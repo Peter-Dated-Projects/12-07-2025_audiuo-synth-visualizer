@@ -85,6 +85,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ bands, onBandChange }) => {
       </div>
 
       <div className="mt-auto pt-6 border-t border-zinc-800">
+        {/* Container for lil-gui */}
+        <div id="visualizer-controls-container" className="mb-4 relative z-50" />
+
         <p className="text-zinc-600 text-[10px] leading-relaxed">
           Drag the vertical lines in the spectrum analyzer below the visualizer to adjust frequency
           ranges.
