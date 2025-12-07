@@ -40,6 +40,11 @@ uniform int uMode;
 uniform sampler2D uFreqTexture; // Smoothed frequency data
 uniform sampler2D uWaveTexture; // Raw waveform data
 uniform float uTime;
+uniform float uLissajousA;
+uniform float uLissajousB;
+uniform float uBassLevel;
+uniform float uMidLevel;
+uniform float uTrebleLevel;
 
 // Band Uniforms
 uniform vec3 uBandColors[3];
@@ -78,7 +83,7 @@ void main() {
     vec3 color = vec3(1.0); // Default white
 
     if (uMode == 0) {
-        // --- Mode 0: Sine Crown (Synthetic) ---
+        // --- Mode 0: Lissajous 3D Figure ---
         // Data: Frequency Data
         
         // Determine Band Properties
@@ -103,19 +108,24 @@ void main() {
         float freqVal = getFreq(t) * amp;
         signal = freqVal;
         
-        float angle = t * 2.0 * PI; // 0 to 2PI
+        // Lissajous Parametric Equations
+        // x = Treble * sin(a*t + delta)
+        // y = Mid * sin(b*t)
+        // z = Bass * sin(...)
         
-        // Base Circle
-        float x = sin(angle + uTime * 0.5);
-        float y = cos(angle + uTime * 0.5);
+        float angle = t * 2.0 * PI * 10.0; // Wrap multiple times
         
-        // Modulate radius by frequency magnitude
-        float radius = 2.0 + freqVal * 2.0;
+        // Map bands to axes amplitudes
+        // Base size + dynamic size based on audio level
+        float ampX = 3.0 + uTrebleLevel * 8.0; // Treble -> X
+        float ampY = 3.0 + uMidLevel * 8.0;    // Mid -> Y
+        float ampZ = 3.0 + uBassLevel * 8.0;   // Bass -> Z
         
-        pos = vec3(x * radius, y * radius, 0.0);
+        float x = ampX * sin(uLissajousA * angle + uTime * 0.5);
+        float y = ampY * sin(uLissajousB * angle);
+        float z = ampZ * sin((uLissajousA + uLissajousB) * 0.5 * angle + uTime * 0.5);
         
-        // Add some depth based on index
-        pos.z = sin(angle * 5.0) * freqVal;
+        pos = vec3(x, y, z);
 
     } else if (uMode == 1) {
         // --- Mode 1: Phase Shift (Goniometer) ---
@@ -344,6 +354,11 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
         uFreqTexture: { value: null },
         uWaveTexture: { value: null },
         uTime: { value: 0 },
+        uLissajousA: { value: 3.0 },
+        uLissajousB: { value: 2.0 },
+        uBassLevel: { value: 0.0 },
+        uMidLevel: { value: 0.0 },
+        uTrebleLevel: { value: 0.0 },
         uBandColors: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color()] },
         uBandRanges: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
         uBandAmps: { value: [1, 1, 1] },
@@ -369,12 +384,16 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
   const params = useRef({
     mode: 0,
     noiseFloor: 0.1,
+    lissajousA: 3.0,
+    lissajousB: 2.0,
     color: "#00ff88",
   });
 
   // Setup GUI
   useEffect(() => {
     const container = document.getElementById("visualizer-controls-container");
+    if (container) container.innerHTML = "";
+    
     const gui = new GUI({
       title: "Visualizer Settings",
       container: container || undefined,
@@ -389,7 +408,7 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
 
     gui
       .add(params.current, "mode", {
-        "Sine Crown (Freq)": 0,
+        "Lissajous 3D (Freq)": 0,
         "Phase Shift (Wave)": 1,
         "Derivative (Wave)": 2,
       })
@@ -398,6 +417,10 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
       });
 
     gui.add(params.current, "noiseFloor", 0, 0.5).name("Noise Floor");
+    
+    const lissajousFolder = gui.addFolder("Lissajous Settings");
+    lissajousFolder.add(params.current, "lissajousA", 1, 10, 1).name("Freq X (A)");
+    lissajousFolder.add(params.current, "lissajousB", 1, 10, 1).name("Freq Y (B)");
 
     return () => {
       gui.destroy();
@@ -419,6 +442,33 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
     mat.uniforms.uFreqTexture.value = smoother.getTexture(); // Use smoothed freq
     mat.uniforms.uWaveTexture.value = audioController.waveTexture; // Use raw wave
     mat.uniforms.uTime.value = state.clock.elapsedTime;
+    mat.uniforms.uLissajousA.value = params.current.lissajousA;
+    mat.uniforms.uLissajousB.value = params.current.lissajousB;
+
+    // Calculate Band Levels for Lissajous Axes
+    const freqData = audioController.freqData;
+    const levels = [0, 0, 0];
+    
+    bands.forEach((band, i) => {
+      if (i >= 3) return;
+      let sum = 0;
+      let count = 0;
+      // band.min and band.max are bin indices (0-255 approx)
+      // freqData length is bufferLength (e.g. 1024 or 512)
+      
+      for (let b = band.min; b <= band.max; b++) {
+        if (b < freqData.length) {
+          sum += freqData[b];
+          count++;
+        }
+      }
+      // Normalize 0-255 to 0-1
+      levels[i] = count > 0 ? sum / count / 255.0 : 0;
+    });
+
+    mat.uniforms.uBassLevel.value = levels[0];
+    mat.uniforms.uMidLevel.value = levels[1];
+    mat.uniforms.uTrebleLevel.value = levels[2];
 
     // 4. Update Band Uniforms
     // We assume bands array has 3 elements (Bass, Mid, Treble)

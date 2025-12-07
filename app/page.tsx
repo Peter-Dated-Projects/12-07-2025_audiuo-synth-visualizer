@@ -39,6 +39,7 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [mode, setMode] = useState<"points" | "lines">("points");
+  const [visualizerType, setVisualizerType] = useState<"spectrum" | "lissajous">("spectrum");
   const [bands, setBands] = useState<FrequencyBand[]>(DEFAULT_BANDS);
 
   // Load cached bands on mount
@@ -89,6 +90,26 @@ export default function Home() {
     setGlobalVolume(volume);
   }, [volume, audioRef, setGlobalVolume, isReady]);
 
+  // Add keyboard shortcut for play/pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        // Check if the active element is an input or textarea to avoid conflict
+        const activeElement = document.activeElement;
+        const isInput =
+          activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+        if (!isInput) {
+          e.preventDefault(); // Prevent scrolling
+          togglePlay();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [togglePlay]);
+
   const handleBandChange = async (id: string, newBand: Partial<FrequencyBand>) => {
     setBands((prev) => {
       const newBands = prev.map((b) => (b.id === id ? { ...b, ...newBand } : b));
@@ -126,7 +147,7 @@ export default function Home() {
         {/* Main Visualizer Area */}
         <div className="flex-1 relative bg-black overflow-hidden">
           <div className="absolute inset-0 z-0">
-            <Scene bands={bands} mode={mode} analyser={analyser} />
+            <Scene bands={bands} mode={mode} analyser={analyser} visualizerType={visualizerType} />
           </div>
 
           {/* Overlay Controls (Top Left) */}
@@ -213,7 +234,12 @@ export default function Home() {
       </div>
 
       {/* Right Sidebar */}
-      <Sidebar bands={bands} onBandChange={handleBandChange} />
+      <Sidebar
+        bands={bands}
+        onBandChange={handleBandChange}
+        visualizerType={visualizerType}
+        onVisualizerTypeChange={setVisualizerType}
+      />
     </main>
   );
 }
