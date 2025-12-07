@@ -92,9 +92,9 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
           return sum / (end - start) / 255;
         };
 
-        const bass = getAverage(bands[0].min, bands[0].max) * bands[0].amplitude;
-        const mid = getAverage(bands[1].min, bands[1].max) * bands[1].amplitude;
-        const treble = getAverage(bands[2].min, bands[2].max) * bands[2].amplitude;
+        const bass = getAverage(bands[0].min, bands[0].max);
+        const mid = getAverage(bands[1].min, bands[1].max);
+        const treble = getAverage(bands[2].min, bands[2].max);
 
         // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
         // We map the treble intensity to different complexity levels
@@ -118,6 +118,9 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
         materialRef.current.uBassFreq = currentRatios.current.x;
         materialRef.current.uMidFreq = currentRatios.current.y;
         materialRef.current.uBassLevel = bass;
+        materialRef.current.uBassScale = bands[0].amplitude;
+        materialRef.current.uMidScale = bands[1].amplitude;
+        materialRef.current.uTrebleScale = bands[2].amplitude;
 
         // Update Colors
         materialRef.current.uBassColor = new THREE.Color(bands[0].color);

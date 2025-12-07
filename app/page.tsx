@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Scene from "../components/Scene";
-import { useAudioAnalyzer } from "../hooks/useAudioAnalyzer";
+import { useAudioAnalyzer, getSettingsFromDB, saveSettingsToDB } from "../hooks/useAudioAnalyzer";
 import { Sidebar } from "../components/Sidebar";
 import { SpectrumAnalyzer } from "../components/SpectrumAnalyzer";
 
@@ -22,14 +22,35 @@ const DEFAULT_BANDS: FrequencyBand[] = [
 ];
 
 export default function Home() {
-  const { audioRef, isPlaying, isLooping, audioUrl, loadFile, togglePlay, toggleLoop, analyser } =
-    useAudioAnalyzer();
+  const {
+    audioRef,
+    isPlaying,
+    isLooping,
+    audioUrl,
+    loadFile,
+    togglePlay,
+    toggleLoop,
+    analyser,
+    setGlobalVolume,
+    isReady,
+  } = useAudioAnalyzer();
 
   const [volume, setVolume] = useState(0.5);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [mode, setMode] = useState<"points" | "lines">("points");
   const [bands, setBands] = useState<FrequencyBand[]>(DEFAULT_BANDS);
+
+  // Load cached bands on mount
+  useEffect(() => {
+    const loadCachedBands = async () => {
+      const settings = await getSettingsFromDB();
+      if (settings && settings.bands) {
+        setBands(settings.bands);
+      }
+    };
+    loadCachedBands();
+  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,12 +82,28 @@ export default function Home() {
 
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = volume;
+      // Ensure the audio element volume is maxed out so the source gets full signal
+      // The actual output volume is controlled by the GainNode via setGlobalVolume
+      audioRef.current.volume = 1.0;
     }
-  }, [volume, audioRef]);
+    setGlobalVolume(volume);
+  }, [volume, audioRef, setGlobalVolume, isReady]);
 
-  const handleBandChange = (id: string, newBand: Partial<FrequencyBand>) => {
-    setBands((prev) => prev.map((b) => (b.id === id ? { ...b, ...newBand } : b)));
+  const handleBandChange = async (id: string, newBand: Partial<FrequencyBand>) => {
+    setBands((prev) => {
+      const newBands = prev.map((b) => (b.id === id ? { ...b, ...newBand } : b));
+      
+      // Save to DB
+      // We need to do this asynchronously, but we can't await inside the setState callback
+      // So we fire and forget, but we need the latest state.
+      // A cleaner way is to use an effect or just call the async function with the new value.
+      (async () => {
+        const currentSettings = await getSettingsFromDB() || {};
+        await saveSettingsToDB({ ...currentSettings, bands: newBands });
+      })();
+      
+      return newBands;
+    });
   };
 
   const formatTime = (time: number) => {

@@ -3,20 +3,52 @@ import { useRef, useState, useEffect, useCallback } from "react";
 // --- IndexedDB Helpers ---
 const DB_NAME = "AudioVisualizerDB";
 const STORE_NAME = "files";
+const SETTINGS_STORE_NAME = "settings";
 const FILE_KEY = "lastPlayed";
+const SETTINGS_KEY = "userSettings";
 
 const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, 2); // Increment version
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
+      if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
+        db.createObjectStore(SETTINGS_STORE_NAME);
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+};
+
+export const saveSettingsToDB = async (settings: any) => {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(SETTINGS_STORE_NAME, "readwrite");
+    const store = tx.objectStore(SETTINGS_STORE_NAME);
+    store.put(settings, SETTINGS_KEY);
+  } catch (err) {
+    console.error("Failed to save settings to DB:", err);
+  }
+};
+
+export const getSettingsFromDB = async (): Promise<any | null> => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SETTINGS_STORE_NAME, "readonly");
+      const store = tx.objectStore(SETTINGS_STORE_NAME);
+      const request = store.get(SETTINGS_KEY);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error("Failed to get settings from DB:", err);
+    return null;
+  }
 };
 
 const saveFileToDB = async (file: File) => {
@@ -56,6 +88,7 @@ export interface AudioData {
 export const useAudioAnalyzer = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   
@@ -63,6 +96,20 @@ export const useAudioAnalyzer = () => {
   const [isLooping, setIsLooping] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      const settings = await getSettingsFromDB();
+      if (settings && typeof settings.isLooping === 'boolean') {
+        setIsLooping(settings.isLooping);
+        if (audioRef.current) {
+          audioRef.current.loop = settings.isLooping;
+        }
+      }
+    };
+    loadSettings();
+  }, []);
 
   // Initialize Audio Context
   const initAudio = useCallback(() => {
@@ -77,15 +124,26 @@ export const useAudioAnalyzer = () => {
     analyser.smoothingTimeConstant = 0.8;
     analyserRef.current = analyser;
 
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = 1.0;
+    gainNodeRef.current = gainNode;
+
     if (audioRef.current) {
       // Check if source already exists to avoid error
       if (!sourceRef.current) {
         const source = ctx.createMediaElementSource(audioRef.current);
         source.connect(analyser);
-        analyser.connect(ctx.destination);
+        analyser.connect(gainNode);
+        gainNode.connect(ctx.destination);
         sourceRef.current = source;
       }
       setIsReady(true);
+    }
+  }, []);
+
+  const setGlobalVolume = useCallback((volume: number) => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = volume;
     }
   }, []);
 
@@ -139,10 +197,15 @@ export const useAudioAnalyzer = () => {
     }
   };
 
-  const toggleLoop = () => {
+  const toggleLoop = async () => {
     if (audioRef.current) {
-      audioRef.current.loop = !isLooping;
-      setIsLooping(!isLooping);
+      const newLoopState = !isLooping;
+      audioRef.current.loop = newLoopState;
+      setIsLooping(newLoopState);
+      
+      // Update settings in DB
+      const currentSettings = await getSettingsFromDB() || {};
+      await saveSettingsToDB({ ...currentSettings, isLooping: newLoopState });
     }
   };
 
@@ -205,5 +268,6 @@ export const useAudioAnalyzer = () => {
     toggleLoop,
     getFrequencyData,
     analyser: analyserRef.current,
+    setGlobalVolume,
   };
 };

@@ -45,14 +45,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ bands, onBandChange }) => {
               <div className="flex justify-between">
                 <label className="text-zinc-600 text-[10px] uppercase">Amplitude</label>
                 <span className="text-zinc-500 text-[10px] font-mono">
-                  {band.amplitude.toFixed(1)}x
+                  {band.amplitude.toFixed(2)}x
                 </span>
               </div>
               <input
                 type="range"
                 min="0"
-                max="5"
-                step="0.1"
+                max="1"
+                step="0.01"
                 value={band.amplitude}
                 onChange={(e) => onBandChange(band.id, { amplitude: parseFloat(e.target.value) })}
                 className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-zinc-400 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:hover:bg-white"

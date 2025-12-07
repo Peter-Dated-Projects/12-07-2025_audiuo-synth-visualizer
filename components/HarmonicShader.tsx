@@ -12,6 +12,9 @@ const HarmonicMaterial = shaderMaterial(
     uBassFreq: 1.0,
     uMidFreq: 1.0,
     uBassLevel: 0.0,
+    uBassScale: 1.0,
+    uMidScale: 1.0,
+    uTrebleScale: 1.0,
     uBassColor: new THREE.Color(1.0, 0.3, 0.0),
     uMidColor: new THREE.Color(0.2, 0.8, 0.2), // Default Greenish
     uTrebleColor: new THREE.Color(0.5, 0.2, 0.8), // Default Purpleish
@@ -24,6 +27,9 @@ const HarmonicMaterial = shaderMaterial(
     uniform float uBassFreq;
     uniform float uMidFreq;
     uniform float uBassLevel;
+    uniform float uBassScale;
+    uniform float uMidScale;
+    uniform float uTrebleScale;
     uniform vec3 uBassColor;
     uniform vec3 uMidColor;
     uniform vec3 uTrebleColor;
@@ -41,12 +47,16 @@ const HarmonicMaterial = shaderMaterial(
       float t = (aIndex / 20000.0) * 6.28318 * 10.0;
 
       // 2. Sample Audio Data
-      // We map the index to the treble range in UV space (approx 0.1 to 0.25).
-      float minUV = 81.0 / 1024.0;
-      float maxUV = 255.0 / 1024.0;
-      float freqUV = minUV + (aIndex / 20000.0) * (maxUV - minUV);
+      // Logarithmic Sampling to spread bass/mids across the visualizer
+      float normalizedIndex = aIndex / 20000.0;
+      float logIndex = pow(normalizedIndex, 4.0);
       
-      float audioValue = texture2D(uAudioTexture, vec2(freqUV, 0.0)).r;
+      float rawAudio = texture2D(uAudioTexture, vec2(logIndex, 0.0)).r;
+      
+      // Gamma Curve (Punchy Fix)
+      // Amplitude Compensation (Boost Highs)
+      float boost = 1.0 + (normalizedIndex * 3.0);
+      float audioValue = sharpAudio * boost;
       
       // 3. Lissajous Parametric Equations
       // We use audioValue to modulate the AMPLITUDE (Radius)
@@ -56,9 +66,11 @@ const HarmonicMaterial = shaderMaterial(
       radius += uBassLevel * 2.0;
 
       vec3 pos;
-      pos.x = radius * sin(uBassFreq * t + PI * 0.5);
-      pos.y = radius * sin(uMidFreq * t);
-      pos.z = 0.0; // Flatten to 2D
+      pos.x = radius * sin(uBassFreq * t + PI * 0.5) * uBassScale;
+      pos.y = radius * sin(uMidFreq * t) * uMidScale;
+      pos.z = radius * sin((uBassFreq + uMidFreq) * 0.5 * t) * uTrebleScale; // Add depth with Treble Scale
+      
+      // Optional: Twist the whole thing based on time
       
       // Optional: Twist the whole thing based on time
       // pos.x += sin(uTime) * 2.0;
@@ -296,6 +308,9 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
         lineMat.uBassFreq = pointMat.uBassFreq;
         lineMat.uMidFreq = pointMat.uMidFreq;
         lineMat.uBassLevel = pointMat.uBassLevel;
+        lineMat.uBassScale = pointMat.uBassScale;
+        lineMat.uMidScale = pointMat.uMidScale;
+        lineMat.uTrebleScale = pointMat.uTrebleScale;
         lineMat.uAudioTexture = targets.current.write.texture;
       }
 

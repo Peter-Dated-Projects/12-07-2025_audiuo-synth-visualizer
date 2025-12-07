@@ -75,11 +75,9 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
 
         // Determine which band this bin belongs to
         let color = "#333"; // Default gray
-        let amplitude = 1.0;
         for (const band of bands) {
           if (i >= band.min && i <= band.max) {
             color = band.color;
-            amplitude = band.amplitude;
             break;
           }
         }
@@ -87,7 +85,7 @@ export const SpectrumAnalyzer: React.FC<SpectrumAnalyzerProps> = ({
         // Logarithmic Amplitude Scale
         // Map 0-255 to 0-1 logarithmically
         const val = Math.max(0, smoothedData[i]);
-        const percent = (Math.log10(val + 1) / Math.log10(256)) * amplitude;
+        const percent = Math.log10(val + 1) / Math.log10(256);
 
         const barHeight = Math.min(height, height * percent);
 
