@@ -67,7 +67,7 @@ function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
 
       // Update audio uniforms if data is available
       if (getFrequencyData) {
-        const { treble } = getFrequencyData();
+        const { treble, bass } = getFrequencyData();
 
         // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
         // We map the treble intensity to different complexity levels
@@ -90,6 +90,7 @@ function SceneContent({ getFrequencyData, mode, analyser }: SceneContentProps) {
         // Map x -> BassFreq, y -> MidFreq
         materialRef.current.uBassFreq = currentRatios.current.x;
         materialRef.current.uMidFreq = currentRatios.current.y;
+        materialRef.current.uBassLevel = bass;
       }
     }
 

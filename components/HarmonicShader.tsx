@@ -11,6 +11,7 @@ const HarmonicMaterial = shaderMaterial(
     uTime: 0,
     uBassFreq: 1.0,
     uMidFreq: 1.0,
+    uBassLevel: 0.0, // New uniform for bass intensity
     uAudioTexture: new THREE.DataTexture(new Uint8Array(1024), 1024, 1, THREE.RedFormat),
     uIsLine: 0, // 0 for points, 1 for lines
   },
@@ -19,6 +20,7 @@ const HarmonicMaterial = shaderMaterial(
     uniform float uTime;
     uniform float uBassFreq;
     uniform float uMidFreq;
+    uniform float uBassLevel;
     uniform sampler2D uAudioTexture;
     
     attribute float aIndex;
@@ -44,6 +46,9 @@ const HarmonicMaterial = shaderMaterial(
       // We use audioValue to modulate the AMPLITUDE (Radius)
       float radius = 5.0 + (audioValue * 3.0); 
       
+      // Add a "Bass Pulse" to the overall size
+      radius += uBassLevel * 2.0;
+
       vec3 pos;
       pos.x = radius * sin(uBassFreq * t);
       pos.y = radius * sin(uMidFreq * t);
@@ -57,7 +62,15 @@ const HarmonicMaterial = shaderMaterial(
       gl_Position = projectionMatrix * mvPosition;
 
       // Pass color to fragment shader
-      vColor = vec3(0.5 + 0.5 * sin(t), 0.2, 0.8 + 0.5 * cos(t));
+      // Base color (Cool Purples/Blues)
+      vec3 baseColor = vec3(0.5 + 0.5 * sin(t), 0.2, 0.8 + 0.5 * cos(t));
+      
+      // Bass Color (Fiery Orange/Red)
+      vec3 bassColor = vec3(1.0, 0.3, 0.0);
+      
+      // Mix based on bass level (squared for sharper reaction)
+      float mixFactor = clamp(uBassLevel * uBassLevel * 1.5, 0.0, 1.0);
+      vColor = mix(baseColor, bassColor, mixFactor);
 
       // Visual Polish:
       // Points in the center are brighter
@@ -65,10 +78,10 @@ const HarmonicMaterial = shaderMaterial(
       vAlpha = 1.0 / (centerDist * 0.5 + 0.1); 
       
       // Boost alpha with audio
-      vAlpha *= (0.5 + audioValue * 2.0);
+      vAlpha *= (0.5 + audioValue * 2.0 + uBassLevel);
 
       // Dynamic point size
-      gl_PointSize = 4.0 + audioValue * 10.0; // Pulse size with audio
+      gl_PointSize = 4.0 + audioValue * 10.0 + uBassLevel * 5.0; // Pulse size with audio
       gl_PointSize *= (10.0 / -mvPosition.z);
     }
   `,
@@ -106,6 +119,7 @@ export type HarmonicMaterialType = THREE.ShaderMaterial & {
   uTime: number;
   uBassFreq: number;
   uMidFreq: number;
+  uBassLevel: number;
   uAudioTexture: THREE.Texture;
   uIsLine: number;
 };
@@ -165,6 +179,7 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
         lineMat.uTime = pointMat.uTime;
         lineMat.uBassFreq = pointMat.uBassFreq;
         lineMat.uMidFreq = pointMat.uMidFreq;
+        lineMat.uBassLevel = pointMat.uBassLevel;
         lineMat.uAudioTexture = audioTexture;
       }
     });
@@ -199,6 +214,7 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
               blending={THREE.AdditiveBlending}
               uBassFreq={1.0}
               uMidFreq={1.0}
+              uBassLevel={0.0}
               uAudioTexture={audioTexture}
               uIsLine={0}
             />
@@ -213,6 +229,7 @@ export const HarmonicVisualizer = forwardRef<HarmonicMaterialType, HarmonicVisua
               blending={THREE.AdditiveBlending}
               uBassFreq={1.0}
               uMidFreq={1.0}
+              uBassLevel={0.0}
               uAudioTexture={audioTexture}
               uIsLine={1}
               opacity={0.15}
