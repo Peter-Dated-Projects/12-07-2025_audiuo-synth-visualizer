@@ -40,17 +40,24 @@ uniform int uMode;
 uniform sampler2D uFreqTexture; // Smoothed frequency data
 uniform sampler2D uWaveTexture; // Raw waveform data
 uniform float uTime;
-uniform float uLissajousRatio;
+
+// Band Uniforms
+uniform vec3 uBandColors[3];
+uniform vec2 uBandRanges[3]; // x=min, y=max (normalized 0..1)
+uniform float uBandAmps[3];
 
 attribute float aIndex;
 
 varying float vSignal;
+varying vec3 vColor;
 
 #define PI 3.14159265359
 
 // Helper to sample texture at a specific normalized position (0.0 to 1.0)
 float getFreq(float t) {
-    return texture2D(uFreqTexture, vec2(t, 0.5)).r;
+    // Map t (0..1) to the first 256 bins (approx 0..0.25 of texture)
+    // This matches the Spectrum Analyzer's view
+    return texture2D(uFreqTexture, vec2(t * 0.25, 0.5)).r;
 }
 
 float getWave(float t) {
@@ -68,24 +75,39 @@ void main() {
     
     vec3 pos = vec3(0.0);
     float signal = 0.0;
+    vec3 color = vec3(1.0); // Default white
 
     if (uMode == 0) {
         // --- Mode 0: Sine Crown (Synthetic) ---
         // Data: Frequency Data
-        // Math: Lissajous parametric equations
         
-        float freqVal = getFreq(t);
+        // Determine Band Properties
+        // t goes 0..1, which maps to 0..255 bins
+        // uBandRanges are normalized 0..1 relative to this 255 range
+        
+        float amp = 1.0;
+        color = vec3(0.2); // Fallback dark gray
+        
+        // Check bands (unrolled loop for safety)
+        if (t >= uBandRanges[0].x && t <= uBandRanges[0].y) {
+            color = uBandColors[0];
+            amp = uBandAmps[0];
+        } else if (t >= uBandRanges[1].x && t <= uBandRanges[1].y) {
+            color = uBandColors[1];
+            amp = uBandAmps[1];
+        } else if (t >= uBandRanges[2].x && t <= uBandRanges[2].y) {
+            color = uBandColors[2];
+            amp = uBandAmps[2];
+        }
+        
+        float freqVal = getFreq(t) * amp;
         signal = freqVal;
-        
-        // Lissajous parameters
-        float a = 3.0;
-        float b = a * uLissajousRatio; // e.g. 3.0 * 4.0/3.0 = 4.0
         
         float angle = t * 2.0 * PI; // 0 to 2PI
         
-        // Base Lissajous
-        float x = sin(a * angle + uTime * 0.5);
-        float y = cos(b * angle);
+        // Base Circle
+        float x = sin(angle + uTime * 0.5);
+        float y = cos(angle + uTime * 0.5);
         
         // Modulate radius by frequency magnitude
         float radius = 2.0 + freqVal * 2.0;
@@ -100,6 +122,8 @@ void main() {
         // Data: Waveform Data
         // x = sample(t)
         // y = sample(t - delay)
+        
+        color = uBandColors[0]; // Use Bass color for waveform
         
         float delay = 0.25; // Quarter cycle approx for sine waves
         
@@ -127,6 +151,8 @@ void main() {
         // x = sample(t)
         // y = sample(t) - sample(t - epsilon)
         
+        color = uBandColors[1]; // Use Mid color for derivative
+        
         float epsilon = 0.01;
         
         float x = getWaveSigned(t);
@@ -143,18 +169,19 @@ void main() {
     }
 
     vSignal = signal;
+    vColor = color;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }
 `;
 
 const VISUALIZER_FRAGMENT_SHADER = `
 varying float vSignal;
-uniform vec3 uColor;
+varying vec3 vColor;
 
 void main() {
     // Simple glow based on signal strength
     float alpha = 0.5 + vSignal * 0.5;
-    gl_FragColor = vec4(uColor * (1.0 + vSignal), alpha);
+    gl_FragColor = vec4(vColor * (1.0 + vSignal), alpha);
 }
 `;
 
@@ -270,11 +297,21 @@ class AudioController {
 
 // --- Main Component ---
 
-interface AudioVisualizerEngineProps {
-  analyser: AnalyserNode;
+interface FrequencyBand {
+  id: string;
+  label: string;
+  min: number;
+  max: number;
+  color: string;
+  amplitude: number;
 }
 
-export default function AudioVisualizerEngine({ analyser }: AudioVisualizerEngineProps) {
+interface AudioVisualizerEngineProps {
+  analyser: AnalyserNode;
+  bands: FrequencyBand[];
+}
+
+export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualizerEngineProps) {
   const { gl } = useThree();
 
   // Initialize Controllers
@@ -307,8 +344,9 @@ export default function AudioVisualizerEngine({ analyser }: AudioVisualizerEngin
         uFreqTexture: { value: null },
         uWaveTexture: { value: null },
         uTime: { value: 0 },
-        uLissajousRatio: { value: 1.33 }, // 4:3
-        uColor: { value: new THREE.Color("#00ff88") },
+        uBandColors: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color()] },
+        uBandRanges: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
+        uBandAmps: { value: [1, 1, 1] },
       },
       transparent: true,
       depthWrite: false,
@@ -331,7 +369,6 @@ export default function AudioVisualizerEngine({ analyser }: AudioVisualizerEngin
   const params = useRef({
     mode: 0,
     noiseFloor: 0.1,
-    lissajousRatio: 1.33,
     color: "#00ff88",
   });
 
@@ -361,10 +398,6 @@ export default function AudioVisualizerEngine({ analyser }: AudioVisualizerEngin
       });
 
     gui.add(params.current, "noiseFloor", 0, 0.5).name("Noise Floor");
-    gui.add(params.current, "lissajousRatio", 0.1, 5.0).name("Lissajous Ratio");
-    gui.addColor(params.current, "color").onChange((v: string) => {
-      materialRef.current.uniforms.uColor.value.set(v);
-    });
 
     return () => {
       gui.destroy();
@@ -386,7 +419,19 @@ export default function AudioVisualizerEngine({ analyser }: AudioVisualizerEngin
     mat.uniforms.uFreqTexture.value = smoother.getTexture(); // Use smoothed freq
     mat.uniforms.uWaveTexture.value = audioController.waveTexture; // Use raw wave
     mat.uniforms.uTime.value = state.clock.elapsedTime;
-    mat.uniforms.uLissajousRatio.value = params.current.lissajousRatio;
+
+    // 4. Update Band Uniforms
+    // We assume bands array has 3 elements (Bass, Mid, Treble)
+    // Map 0-255 range to 0-1
+    const maxBin = 255;
+
+    bands.forEach((band, i) => {
+      if (i < 3) {
+        mat.uniforms.uBandColors.value[i].set(band.color);
+        mat.uniforms.uBandRanges.value[i].set(band.min / maxBin, band.max / maxBin);
+        mat.uniforms.uBandAmps.value[i] = band.amplitude;
+      }
+    });
   });
 
   // Cleanup

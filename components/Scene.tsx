@@ -80,7 +80,7 @@ function SceneContent({ bands, mode, analyser }: SceneContentProps) {
 
   return (
     <>
-      {analyser && <AudioVisualizerEngine analyser={analyser} />}
+      {analyser && <AudioVisualizerEngine analyser={analyser} bands={bands} />}
       <EffectComposer>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />
         <Scanline blendFunction={BlendFunction.OVERLAY} density={1.25} />
