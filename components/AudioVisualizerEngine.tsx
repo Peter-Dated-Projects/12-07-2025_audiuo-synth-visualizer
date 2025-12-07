@@ -319,14 +319,20 @@ interface FrequencyBand {
 interface AudioVisualizerEngineProps {
   analyser: AnalyserNode;
   bands: FrequencyBand[];
+  audioTexture: THREE.DataTexture;
 }
 
-export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualizerEngineProps) {
+export default function AudioVisualizerEngine({
+  analyser,
+  bands,
+  audioTexture,
+}: AudioVisualizerEngineProps) {
   const { gl } = useThree();
 
   // Initialize Controllers
+  // We still need AudioController for Waveform data (Time Domain)
   const audioController = useMemo(() => new AudioController(analyser), [analyser]);
-  const smoother = useMemo(() => new GPGPUSmoother(gl, analyser.fftSize / 2), [gl, analyser]);
+  // Removed GPGPUSmoother as AudioNormalizer handles smoothing now
 
   // Geometry
   const geometry = useMemo(() => {
@@ -391,23 +397,23 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
 
   // Render Loop
   useFrame((state) => {
-    if (!audioController || !smoother) return;
+    if (!audioController) return;
 
-    // 1. Update Audio Data
+    // 1. Update Audio Data (Waveform only really needed now)
     audioController.update();
 
-    // 2. Run GPGPU Smoother on Frequency Data
-    smoother.update(gl, audioController.freqTexture, params.current.noiseFloor);
-
-    // 3. Update Visualizer Uniforms
+    // 2. Update Visualizer Uniforms
     const mat = materialRef.current;
-    mat.uniforms.uFreqTexture.value = smoother.getTexture(); // Use smoothed freq
+    mat.uniforms.uFreqTexture.value = audioTexture; // Use normalized texture
     mat.uniforms.uWaveTexture.value = audioController.waveTexture; // Use raw wave
     mat.uniforms.uTime.value = state.clock.elapsedTime;
     mat.uniforms.uLissajousA.value = params.current.lissajousA;
     mat.uniforms.uLissajousB.value = params.current.lissajousB;
 
     // Calculate Band Levels for Lissajous Axes
+    // Note: We are using the raw freqData here for levels, which is un-normalized/un-smoothed.
+    // Ideally we should use the normalized data, but for now this keeps it working without passing another prop.
+    // The visualizer lines themselves use the smooth texture.
     const freqData = audioController.freqData;
     const levels = [0, 0, 0];
 

@@ -13,8 +13,9 @@ import { BlendFunction } from "postprocessing";
 import AudioVisualizerEngine from "./AudioVisualizerEngine";
 import LissajousVisualizer from "./LissajousVisualizer";
 import { HarmonicVisualizer, HarmonicMaterialType } from "./HarmonicVisualizer";
+import { AudioNormalizer } from "../utils/AudioNormalizer";
 import * as THREE from "three";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 
 interface FrequencyBand {
   id: string;
@@ -43,6 +44,10 @@ function SceneContent({
   const { camera } = useThree();
   const initialCameraPos = useRef<THREE.Vector3 | null>(null);
 
+  // Unified Audio Normalizer
+  const normalizer = useMemo(() => new AudioNormalizer(1024), []);
+  const rawData = useMemo(() => new Uint8Array(1024), []);
+
   // Capture initial camera position once
   useEffect(() => {
     initialCameraPos.current = camera.position.clone();
@@ -67,6 +72,12 @@ function SceneContent({
   }));
 
   useFrame((state, delta) => {
+    // Update Audio Normalizer
+    if (analyser) {
+      analyser.getByteFrequencyData(rawData);
+      normalizer.update(rawData);
+    }
+
     // Smooth camera movement with random offsets
     const t = state.clock.elapsedTime;
     const { x, y } = movementParams;
@@ -92,11 +103,25 @@ function SceneContent({
     <>
       {analyser &&
         (visualizerType === "lissajous" ? (
-          <LissajousVisualizer analyser={analyser} bands={bands} />
+          <LissajousVisualizer
+            analyser={analyser}
+            bands={bands}
+            normalizedData={normalizer.normalizedData}
+          />
         ) : visualizerType === "harmonic" ? (
-          <HarmonicVisualizer mode={mode} analyser={analyser} bands={bands} />
+          <HarmonicVisualizer
+            mode={mode}
+            analyser={analyser}
+            bands={bands}
+            audioTexture={normalizer.texture}
+            normalizedData={normalizer.normalizedData}
+          />
         ) : (
-          <AudioVisualizerEngine analyser={analyser} bands={bands} />
+          <AudioVisualizerEngine
+            analyser={analyser}
+            bands={bands}
+            audioTexture={normalizer.texture}
+          />
         ))}
       <EffectComposer>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />

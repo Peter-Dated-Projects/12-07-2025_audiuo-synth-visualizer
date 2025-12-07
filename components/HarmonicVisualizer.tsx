@@ -138,20 +138,20 @@ interface HarmonicVisualizerProps {
   mode: "points" | "lines";
   analyser?: AnalyserNode | null;
   bands?: FrequencyBand[];
+  audioTexture: THREE.DataTexture;
+  normalizedData: Float32Array;
 }
 
 // Sub-component for a single figure
 const HarmonicFigure = ({
-  analyser,
   band,
   audioTexture,
-  dataArray,
+  normalizedData,
   index,
 }: {
-  analyser: AnalyserNode;
   band: FrequencyBand;
   audioTexture: THREE.Texture;
-  dataArray: Uint8Array;
+  normalizedData: Float32Array;
   index: number;
 }) => {
   const pointRef = useRef<HarmonicMaterialType>(null);
@@ -181,8 +181,8 @@ const HarmonicFigure = ({
     if (!pointRef.current || !lineRef.current) return;
 
     // Analyze Band Data to find dominant frequencies
-    const start = Math.max(0, Math.min(band.min, dataArray.length - 1));
-    const end = Math.max(start, Math.min(band.max, dataArray.length));
+    const start = Math.max(0, Math.min(band.min, normalizedData.length - 1));
+    const end = Math.max(start, Math.min(band.max, normalizedData.length));
 
     let max1 = -1;
     let max1Index = -1;
@@ -191,7 +191,7 @@ const HarmonicFigure = ({
 
     if (end > start) {
       for (let i = start; i < end; i++) {
-        const val = dataArray[i];
+        const val = normalizedData[i];
         if (val > max1) {
           max2 = max1;
           max2Index = max1Index;
@@ -202,9 +202,7 @@ const HarmonicFigure = ({
           max2Index = i;
         }
       }
-    }
-
-    // Quantize frequencies: divide index by 20 to group them
+    } // Quantize frequencies: divide index by 20 to group them
     const f1 = max1Index > -1 ? Math.floor(max1Index / 20) + 1 : 1;
     const f2 = max2Index > -1 ? Math.floor(max2Index / 20) + 1 : 2;
 
@@ -272,28 +270,13 @@ const HarmonicFigure = ({
   );
 };
 
-export const HarmonicVisualizer = ({ mode, analyser, bands }: HarmonicVisualizerProps) => {
-  // Shared Audio Texture
-  const dataArray = useMemo(() => new Uint8Array(1024), []);
-  const audioTexture = useMemo(() => {
-    const texture = new THREE.DataTexture(
-      dataArray,
-      1024,
-      1,
-      THREE.RedFormat,
-      THREE.UnsignedByteType
-    );
-    texture.needsUpdate = true;
-    return texture;
-  }, [dataArray]);
-
-  useFrame(() => {
-    if (analyser) {
-      analyser.getByteFrequencyData(dataArray);
-      audioTexture.needsUpdate = true;
-    }
-  });
-
+export const HarmonicVisualizer = ({
+  mode,
+  analyser,
+  bands,
+  audioTexture,
+  normalizedData,
+}: HarmonicVisualizerProps) => {
   if (!bands || !analyser) return null;
 
   return (
@@ -301,10 +284,9 @@ export const HarmonicVisualizer = ({ mode, analyser, bands }: HarmonicVisualizer
       {bands.map((band, i) => (
         <HarmonicFigure
           key={band.id}
-          analyser={analyser}
           band={band}
           audioTexture={audioTexture}
-          dataArray={dataArray}
+          normalizedData={normalizedData}
           index={i}
         />
       ))}

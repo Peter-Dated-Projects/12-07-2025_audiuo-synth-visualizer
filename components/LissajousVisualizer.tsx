@@ -68,14 +68,18 @@ interface FrequencyBand {
 interface LissajousVisualizerProps {
   analyser: AnalyserNode;
   bands: FrequencyBand[];
+  normalizedData: Float32Array;
 }
 
 // --- Sub-component for a single band's figure ---
-const LissajousFigure = ({ analyser, band }: { analyser: AnalyserNode; band: FrequencyBand }) => {
+const LissajousFigure = ({
+  band,
+  normalizedData,
+}: {
+  band: FrequencyBand;
+  normalizedData: Float32Array;
+}) => {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
-
-  // Local data array for this component
-  const dataArray = useMemo(() => new Uint8Array(analyser.frequencyBinCount), [analyser]);
 
   // Geometry: A line strip with many points
   const geometry = useMemo(() => {
@@ -111,12 +115,9 @@ const LissajousFigure = ({ analyser, band }: { analyser: AnalyserNode; band: Fre
   useFrame((state) => {
     if (!materialRef.current) return;
 
-    // 1. Get Data
-    analyser.getByteFrequencyData(dataArray);
-
     // 2. Analyze Band
-    const start = Math.max(0, Math.min(band.min, dataArray.length - 1));
-    const end = Math.max(start, Math.min(band.max, dataArray.length));
+    const start = Math.max(0, Math.min(band.min, normalizedData.length - 1));
+    const end = Math.max(start, Math.min(band.max, normalizedData.length));
 
     if (end <= start) return;
 
@@ -127,7 +128,7 @@ const LissajousFigure = ({ analyser, band }: { analyser: AnalyserNode; band: Fre
     let sum = 0;
 
     for (let i = start; i < end; i++) {
-      const val = dataArray[i];
+      const val = normalizedData[i];
       sum += val;
       if (val > max1) {
         max2 = max1;
@@ -141,7 +142,7 @@ const LissajousFigure = ({ analyser, band }: { analyser: AnalyserNode; band: Fre
     }
 
     const avg = sum / (end - start);
-    const targetScale = (avg / 255.0) * band.amplitude;
+    const targetScale = avg * band.amplitude;
 
     // Use indices as frequencies.
     // We map the raw index to a smaller range (1-12) to get nice integer ratios
@@ -179,11 +180,15 @@ const LissajousFigure = ({ analyser, band }: { analyser: AnalyserNode; band: Fre
   );
 };
 
-export default function LissajousVisualizer({ analyser, bands }: LissajousVisualizerProps) {
+export default function LissajousVisualizer({
+  analyser,
+  bands,
+  normalizedData,
+}: LissajousVisualizerProps) {
   return (
     <group>
       {bands.map((band) => (
-        <LissajousFigure key={band.id} analyser={analyser} band={band} />
+        <LissajousFigure key={band.id} band={band} normalizedData={normalizedData} />
       ))}
     </group>
   );
