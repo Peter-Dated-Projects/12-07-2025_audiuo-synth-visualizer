@@ -18,8 +18,8 @@ varying vec3 vColor;
 
 void main() {
     // Map index to parameter t
-    // We want enough loops to close the shape if the ratio is complex.
-    float t = aIndex * 2.0 * PI * 100.0;
+    // Reduced loops from 100.0 to 30.0 to prevent "noise" when frequencies are non-integers
+    float t = aIndex * 2.0 * PI * 30.0;
 
     // Lissajous Parametric Equations (3D)
     // x = A * sin(a*t + delta)
@@ -47,8 +47,8 @@ void main() {
     float z = (lx * s + lz * c) * radius;
 
     // Color Flow: Create a "current" flowing through the wire
-    // High frequency sine wave moving along the index
-    float flow = sin(aIndex * 50.0 - uTime * 5.0);
+    // Reduced frequency for cleaner look
+    float flow = sin(aIndex * 20.0 - uTime * 3.0);
     
     // Mix base color with white highlights based on flow
     vColor = mix(uColor, vec3(1.0), flow * 0.3);
@@ -158,7 +158,8 @@ const LissajousFigure = ({
     }
 
     const avg = sum / (end - start);
-    const targetScale = avg * band.amplitude;
+    // Apply threshold to prevent noise when silent
+    const targetScale = avg > 0.01 ? avg * band.amplitude : 0.0;
 
     // Use indices as frequencies.
     // We map the raw index to a smaller range (1-12) to get nice integer ratios

@@ -156,7 +156,13 @@ export default function Scene({
       style={{ background: "black", width: "100%", height: "100%" }}
       dpr={[1, 2]}
       frameloop="always"
-      gl={{ alpha: false, antialias: false, powerPreference: "high-performance", stencil: false, depth: true }}
+      gl={{
+        alpha: false,
+        antialias: false,
+        powerPreference: "high-performance",
+        stencil: false,
+        depth: true,
+      }}
     >
       <SceneContent
         bands={bands}
