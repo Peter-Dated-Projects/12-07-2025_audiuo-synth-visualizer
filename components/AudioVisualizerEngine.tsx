@@ -393,7 +393,7 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
   useEffect(() => {
     const container = document.getElementById("visualizer-controls-container");
     if (container) container.innerHTML = "";
-    
+
     const gui = new GUI({
       title: "Visualizer Settings",
       container: container || undefined,
@@ -417,7 +417,7 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
       });
 
     gui.add(params.current, "noiseFloor", 0, 0.5).name("Noise Floor");
-    
+
     const lissajousFolder = gui.addFolder("Lissajous Settings");
     lissajousFolder.add(params.current, "lissajousA", 1, 10, 1).name("Freq X (A)");
     lissajousFolder.add(params.current, "lissajousB", 1, 10, 1).name("Freq Y (B)");
@@ -448,14 +448,14 @@ export default function AudioVisualizerEngine({ analyser, bands }: AudioVisualiz
     // Calculate Band Levels for Lissajous Axes
     const freqData = audioController.freqData;
     const levels = [0, 0, 0];
-    
+
     bands.forEach((band, i) => {
       if (i >= 3) return;
       let sum = 0;
       let count = 0;
       // band.min and band.max are bin indices (0-255 approx)
       // freqData length is bufferLength (e.g. 1024 or 512)
-      
+
       for (let b = band.min; b <= band.max; b++) {
         if (b < freqData.length) {
           sum += freqData[b];

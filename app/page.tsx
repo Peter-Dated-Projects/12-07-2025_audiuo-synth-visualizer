@@ -33,13 +33,16 @@ export default function Home() {
     analyser,
     setGlobalVolume,
     isReady,
+    getFrequencyData,
   } = useAudioAnalyzer();
 
   const [volume, setVolume] = useState(0.5);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [mode, setMode] = useState<"points" | "lines">("points");
-  const [visualizerType, setVisualizerType] = useState<"spectrum" | "lissajous">("spectrum");
+  const [visualizerType, setVisualizerType] = useState<"spectrum" | "lissajous" | "harmonic">(
+    "spectrum"
+  );
   const [bands, setBands] = useState<FrequencyBand[]>(DEFAULT_BANDS);
 
   // Load cached bands on mount
@@ -147,7 +150,13 @@ export default function Home() {
         {/* Main Visualizer Area */}
         <div className="flex-1 relative bg-black overflow-hidden">
           <div className="absolute inset-0 z-0">
-            <Scene bands={bands} mode={mode} analyser={analyser} visualizerType={visualizerType} />
+            <Scene
+              bands={bands}
+              mode={mode}
+              analyser={analyser}
+              visualizerType={visualizerType}
+              getFrequencyData={getFrequencyData}
+            />
           </div>
 
           {/* Overlay Controls (Top Left) */}

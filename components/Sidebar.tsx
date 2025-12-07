@@ -12,39 +12,55 @@ interface FrequencyBand {
 interface SidebarProps {
   bands: FrequencyBand[];
   onBandChange: (id: string, newBand: Partial<FrequencyBand>) => void;
-  visualizerType: "spectrum" | "lissajous";
-  onVisualizerTypeChange: (type: "spectrum" | "lissajous") => void;
+  visualizerType: "spectrum" | "lissajous" | "harmonic";
+  onVisualizerTypeChange: (type: "spectrum" | "lissajous" | "harmonic") => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ bands, onBandChange, visualizerType, onVisualizerTypeChange }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  bands,
+  onBandChange,
+  visualizerType,
+  onVisualizerTypeChange,
+}) => {
   return (
     <div className="w-64 h-full bg-zinc-900 border-l border-zinc-800 p-6 flex flex-col gap-6 overflow-y-auto z-30">
-      
       {/* Visualizer Selector */}
       <div className="flex flex-col gap-2 border-b border-zinc-800 pb-4">
         <h2 className="text-zinc-100 font-mono text-sm uppercase tracking-wider">
           Visualizer Mode
         </h2>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => onVisualizerTypeChange("spectrum")}
+              className={`flex-1 py-1 px-2 text-xs font-mono uppercase rounded border ${
+                visualizerType === "spectrum"
+                  ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                  : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:border-zinc-500"
+              }`}
+            >
+              Spectrum
+            </button>
+            <button
+              onClick={() => onVisualizerTypeChange("lissajous")}
+              className={`flex-1 py-1 px-2 text-xs font-mono uppercase rounded border ${
+                visualizerType === "lissajous"
+                  ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                  : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:border-zinc-500"
+              }`}
+            >
+              Lissajous
+            </button>
+          </div>
           <button
-            onClick={() => onVisualizerTypeChange("spectrum")}
-            className={`flex-1 py-1 px-2 text-xs font-mono uppercase rounded border ${
-              visualizerType === "spectrum"
+            onClick={() => onVisualizerTypeChange("harmonic")}
+            className={`w-full py-1 px-2 text-xs font-mono uppercase rounded border ${
+              visualizerType === "harmonic"
                 ? "bg-zinc-100 text-zinc-900 border-zinc-100"
                 : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:border-zinc-500"
             }`}
           >
-            Spectrum
-          </button>
-          <button
-            onClick={() => onVisualizerTypeChange("lissajous")}
-            className={`flex-1 py-1 px-2 text-xs font-mono uppercase rounded border ${
-              visualizerType === "lissajous"
-                ? "bg-zinc-100 text-zinc-900 border-zinc-100"
-                : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:border-zinc-500"
-            }`}
-          >
-            Lissajous
+            Harmonic (Restored)
           </button>
         </div>
       </div>

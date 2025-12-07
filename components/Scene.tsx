@@ -12,6 +12,7 @@ import {
 import { BlendFunction } from "postprocessing";
 import AudioVisualizerEngine from "./AudioVisualizerEngine";
 import LissajousVisualizer from "./LissajousVisualizer";
+import { HarmonicVisualizer, HarmonicMaterialType } from "./HarmonicVisualizer";
 import * as THREE from "three";
 import { useRef, useState, useEffect } from "react";
 
@@ -28,12 +29,32 @@ interface SceneContentProps {
   bands: FrequencyBand[];
   mode: "points" | "lines";
   analyser?: AnalyserNode | null;
-  visualizerType?: "spectrum" | "lissajous";
+  visualizerType?: "spectrum" | "lissajous" | "harmonic";
+  getFrequencyData?: () => { bass: number; mid: number; treble: number };
 }
 
-function SceneContent({ bands, mode, analyser, visualizerType = "spectrum" }: SceneContentProps) {
+// 1. DEFINE THE "BEAUTIFUL" PRESETS
+const PRESETS = {
+  IDLE: new THREE.Vector3(1, 1, 1), // Circle
+  BASS: new THREE.Vector3(3, 4, 5), // Major Triad
+  MID: new THREE.Vector3(5, 7, 9), // Complex/Jazz
+  PEAK: new THREE.Vector3(10, 12, 15), // Dense/Minor
+};
+
+function SceneContent({
+  bands,
+  mode,
+  analyser,
+  visualizerType = "spectrum",
+  getFrequencyData,
+}: SceneContentProps) {
   const { camera } = useThree();
   const initialCameraPos = useRef<THREE.Vector3 | null>(null);
+
+  // Harmonic Visualizer Refs
+  const materialRef = useRef<HarmonicMaterialType>(null);
+  const currentRatios = useRef(new THREE.Vector3(1, 1, 1));
+  const targetVector = useRef(PRESETS.IDLE);
 
   // Capture initial camera position once
   useEffect(() => {
@@ -58,7 +79,34 @@ function SceneContent({ bands, mode, analyser, visualizerType = "spectrum" }: Sc
     },
   }));
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
+    // Update Harmonic Shader if active
+    if (visualizerType === "harmonic" && materialRef.current) {
+      materialRef.current.uTime += delta;
+
+      // Update audio uniforms if data is available
+      if (getFrequencyData) {
+        const { treble } = getFrequencyData();
+
+        // 2. DECIDE TARGET SHAPE BASED ON TREBLE ONLY
+        if (treble < 0.15) {
+          targetVector.current = PRESETS.IDLE;
+        } else if (treble < 0.45) {
+          targetVector.current = PRESETS.MID; // Moderate complexity
+        } else {
+          targetVector.current = PRESETS.PEAK; // High complexity
+        }
+
+        // 3. SMOOTHLY INTERPOLATE (LERP)
+        const speed = 0.05;
+        currentRatios.current.lerp(targetVector.current, speed);
+
+        // 4. UPDATE SHADER
+        materialRef.current.uBassFreq = currentRatios.current.x;
+        materialRef.current.uMidFreq = currentRatios.current.y;
+      }
+    }
+
     // Smooth camera movement with random offsets
     const t = state.clock.elapsedTime;
     const { x, y } = movementParams;
@@ -82,13 +130,14 @@ function SceneContent({ bands, mode, analyser, visualizerType = "spectrum" }: Sc
 
   return (
     <>
-      {analyser && (
-        visualizerType === "lissajous" ? (
+      {analyser &&
+        (visualizerType === "lissajous" ? (
           <LissajousVisualizer analyser={analyser} />
+        ) : visualizerType === "harmonic" ? (
+          <HarmonicVisualizer ref={materialRef} mode={mode} analyser={analyser} />
         ) : (
           <AudioVisualizerEngine analyser={analyser} bands={bands} />
-        )
-      )}
+        ))}
       <EffectComposer>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />
         <Scanline blendFunction={BlendFunction.OVERLAY} density={1.25} />
@@ -108,10 +157,17 @@ interface SceneProps {
   bands: FrequencyBand[];
   mode?: "points" | "lines";
   analyser?: AnalyserNode | null;
-  visualizerType?: "spectrum" | "lissajous";
+  visualizerType?: "spectrum" | "lissajous" | "harmonic";
+  getFrequencyData?: () => { bass: number; mid: number; treble: number };
 }
 
-export default function Scene({ bands, mode = "points", analyser, visualizerType = "spectrum" }: SceneProps) {
+export default function Scene({
+  bands,
+  mode = "points",
+  analyser,
+  visualizerType = "spectrum",
+  getFrequencyData,
+}: SceneProps) {
   return (
     <Canvas
       camera={{ position: [0, 0, 20], fov: 40 }}
@@ -119,7 +175,13 @@ export default function Scene({ bands, mode = "points", analyser, visualizerType
       dpr={[1, 2]}
       frameloop="always"
     >
-      <SceneContent bands={bands} mode={mode} analyser={analyser} visualizerType={visualizerType} />
+      <SceneContent
+        bands={bands}
+        mode={mode}
+        analyser={analyser}
+        visualizerType={visualizerType}
+        getFrequencyData={getFrequencyData}
+      />
     </Canvas>
   );
 }
