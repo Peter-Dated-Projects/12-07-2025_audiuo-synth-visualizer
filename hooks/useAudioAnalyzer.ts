@@ -248,6 +248,10 @@ export const useAudioAnalyzer = () => {
 
       const ctx = audioContextRef.current!;
 
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
       // Disconnect old source if it exists
       if (sourceRef.current) {
         sourceRef.current.disconnect();

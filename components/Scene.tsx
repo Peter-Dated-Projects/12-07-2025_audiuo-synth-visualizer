@@ -101,6 +101,7 @@ function SceneContent({
 
   return (
     <>
+      <color attach="background" args={["#000000"]} />
       {analyser &&
         (visualizerType === "lissajous" ? (
           <LissajousVisualizer bands={bands} normalizedData={normalizer.normalizedData} />
@@ -119,7 +120,7 @@ function SceneContent({
             audioTexture={normalizer.texture}
           />
         ))}
-      <EffectComposer>
+      <EffectComposer multisampling={0} disableNormalPass autoClear={true}>
         <Bloom intensity={2.5} luminanceThreshold={0.1} luminanceSmoothing={0.9} />
         <Scanline blendFunction={BlendFunction.OVERLAY} density={1.25} />
         <Noise opacity={0.15} />
@@ -155,6 +156,7 @@ export default function Scene({
       style={{ background: "black", width: "100%", height: "100%" }}
       dpr={[1, 2]}
       frameloop="always"
+      gl={{ alpha: false, antialias: false, powerPreference: "high-performance", stencil: false, depth: true }}
     >
       <SceneContent
         bands={bands}

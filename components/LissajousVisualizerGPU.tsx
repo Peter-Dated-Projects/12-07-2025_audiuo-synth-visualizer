@@ -52,6 +52,7 @@ uniform float uTime;
 // Visual parameters
 uniform vec3 uColor;
 uniform float uScale;
+uniform int uColorMode; // 0=Solid, 1=Rainbow, 2=Intensity
 
 attribute float aIndex; // Normalized 0..1 index
 
@@ -59,6 +60,12 @@ varying vec3 vColor;
 varying float vIntensity;
 
 #define PI 3.14159265359
+
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
 
 // Sample audio from texture at normalized position
 float sampleAudio(sampler2D audioTexture, float t) {
@@ -121,19 +128,27 @@ void main() {
     // --- Final Position ---
     vec3 pos = vec3(x, y, z);
     
-    // Optional: Add rotation animation
-    // float rot = uTime * 0.2;
-    // float rotX = pos.x * cos(rot) - pos.y * sin(rot);
-    // float rotY = pos.x * sin(rot) + pos.y * cos(rot);
-    // pos.x = rotX;
-    // pos.y = rotY;
-    
     // Calculate intensity for coloring (based on audio magnitude)
-    vIntensity = sqrt(audioLeft * audioLeft + audioRight * audioRight) * 0.5;
-    vColor = uColor;
+    float mag = sqrt(audioLeft * audioLeft + audioRight * audioRight);
+    vIntensity = mag * 0.5;
+
+    // --- Color Calculation ---
+    if (uColorMode == 1) {
+        // Rainbow: Cycle hue based on index and time
+        float hue = fract(t + uTime * 0.1);
+        vColor = hsv2rgb(vec3(hue, 0.8, 1.0));
+    } else if (uColorMode == 2) {
+        // Intensity: Blue (quiet) to Red (loud)
+        vColor = mix(vec3(0.0, 0.5, 1.0), vec3(1.0, 0.2, 0.0), clamp(mag * 1.5, 0.0, 1.0));
+    } else {
+        // Solid
+        vColor = uColor;
+    }
     
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-    gl_PointSize = 2.0; // For point rendering mode
+    
+    // Dynamic point size based on intensity
+    gl_PointSize = 2.0 + (mag * 8.0); 
 }
 `;
 
@@ -142,9 +157,16 @@ varying vec3 vColor;
 varying float vIntensity;
 
 void main() {
+    // Circular point shape (if using points)
+    vec2 coord = gl_PointCoord - vec2(0.5);
+    if (length(coord) > 0.5) discard;
+
     // Add glow based on audio intensity
-    vec3 finalColor = vColor * (1.0 + vIntensity * 0.5);
-    float alpha = 0.8 + vIntensity * 0.2;
+    vec3 finalColor = vColor * (1.0 + vIntensity * 0.8);
+    
+    // Soft edge for points
+    float dist = length(coord);
+    float alpha = (1.0 - dist * 2.0) * (0.8 + vIntensity * 0.2);
     
     gl_FragColor = vec4(finalColor, alpha);
 }
@@ -153,6 +175,7 @@ void main() {
 // --- TypeScript Interfaces ---
 
 export type ZMode = "parametric" | "time" | "frequency" | "phase";
+export type ColorMode = "solid" | "rainbow" | "intensity";
 
 interface LissajousGPUProps {
   leftChannel: Float32Array;
@@ -167,6 +190,7 @@ interface LissajousGPUProps {
   zScale?: number;
   audioBlend?: number; // 0..1, how much to blend audio vs parametric
   color?: string;
+  colorMode?: ColorMode;
   scale?: number;
   pointCount?: number;
   renderMode?: "line" | "points";
@@ -191,6 +215,7 @@ export default function LissajousVisualizerGPU({
   zScale = 1.0,
   audioBlend = 0.7,
   color = "#00ffff",
+  colorMode = "solid",
   scale = 5.0,
   pointCount = 8192,
   renderMode = "line",
@@ -256,6 +281,7 @@ export default function LissajousVisualizerGPU({
       uAudioBlend: { value: audioBlend },
       uTime: { value: 0 },
       uColor: { value: new THREE.Color(color) },
+      uColorMode: { value: colorModeToInt(colorMode) },
       uScale: { value: scale },
     }),
     [
@@ -271,6 +297,7 @@ export default function LissajousVisualizerGPU({
       zScale,
       audioBlend,
       color,
+      colorMode,
       scale,
     ]
   );
@@ -312,6 +339,7 @@ export default function LissajousVisualizerGPU({
     u.uZScale.value = zScale;
     u.uAudioBlend.value = audioBlend;
     u.uColor.value.set(color);
+    u.uColorMode.value = colorModeToInt(colorMode);
     u.uScale.value = scale;
   });
 
@@ -345,6 +373,19 @@ function zModeToInt(mode: ZMode): number {
       return 2;
     case "phase":
       return 3;
+    default:
+      return 0;
+  }
+}
+
+function colorModeToInt(mode: ColorMode): number {
+  switch (mode) {
+    case "solid":
+      return 0;
+    case "rainbow":
+      return 1;
+    case "intensity":
+      return 2;
     default:
       return 0;
   }
