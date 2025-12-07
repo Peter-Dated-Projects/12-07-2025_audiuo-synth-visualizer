@@ -9,7 +9,7 @@ import { useMemo, useRef } from "react";
 const HarmonicMaterial = shaderMaterial(
   {
     uTime: 0,
-    uColor: new THREE.Color(0.2, 0.6, 1.0),
+    uColor: new THREE.Color(1.0, 0.1, 0.1), // Red color
     uRatios: new THREE.Vector4(4, 6, 10, 12),
     uRatio5: 15,
   },
@@ -86,17 +86,27 @@ const HarmonicMaterial = shaderMaterial(
 
 extend({ HarmonicMaterial });
 
-// TypeScript Augmentation
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      harmonicMaterial: any;
-    }
+type HarmonicMaterialType = THREE.ShaderMaterial & {
+  uTime: number;
+  uColor: THREE.Color;
+  uRatios: THREE.Vector4;
+  uRatio5: number;
+};
+
+declare module "@react-three/fiber" {
+  interface ThreeElements {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    harmonicMaterial: any;
   }
 }
 
+function frequencyToColor(frequency: number): THREE.Color {
+  const hue = (frequency % 360) / 360; // Normalize to [0,1]
+  return new THREE.Color().setHSL(hue, 1.0, 0.5);
+}
+
 export function HarmonicVisualizer() {
-  const materialRef = useRef<any>(null);
+  const materialRef = useRef<HarmonicMaterialType>(null);
 
   // Generate points
   const count = 20000; // Number of particles
@@ -130,7 +140,7 @@ export function HarmonicVisualizer() {
         transparent
         depthWrite={false}
         blending={THREE.AdditiveBlending}
-        uColor={new THREE.Color("#00ffff")}
+        uColor={frequencyToColor(200)}
         uRatios={new THREE.Vector4(4, 6, 10, 12)}
         uRatio5={15}
       />
