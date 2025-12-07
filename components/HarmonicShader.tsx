@@ -1,9 +1,9 @@
 "use client";
 
 import * as THREE from "three";
-import { extend, useFrame } from "@react-three/fiber";
+import { extend } from "@react-three/fiber";
 import { shaderMaterial } from "@react-three/drei";
-import { useMemo, useRef } from "react";
+import { useMemo, forwardRef } from "react";
 
 // Shader Material
 const HarmonicMaterial = shaderMaterial(
@@ -58,7 +58,7 @@ const HarmonicMaterial = shaderMaterial(
       gl_Position = projectionMatrix * mvPosition;
 
       // Size attenuation
-      gl_PointSize = (100.0 / -mvPosition.z);
+      gl_PointSize = (20.0 / -mvPosition.z);
 
       // Alpha based on depth or just constant
       vAlpha = 0.6 + 0.4 * sin(t * 5.0 + uTime * 2.0);
@@ -86,7 +86,7 @@ const HarmonicMaterial = shaderMaterial(
 
 extend({ HarmonicMaterial });
 
-type HarmonicMaterialType = THREE.ShaderMaterial & {
+export type HarmonicMaterialType = THREE.ShaderMaterial & {
   uTime: number;
   uColor: THREE.Color;
   uRatios: THREE.Vector4;
@@ -105,9 +105,7 @@ function frequencyToColor(frequency: number): THREE.Color {
   return new THREE.Color().setHSL(hue, 1.0, 0.5);
 }
 
-export function HarmonicVisualizer() {
-  const materialRef = useRef<HarmonicMaterialType>(null);
-
+export const HarmonicVisualizer = forwardRef<HarmonicMaterialType>((_, ref) => {
   // Generate points
   const count = 20000; // Number of particles
   const geometry = useMemo(() => {
@@ -127,16 +125,10 @@ export function HarmonicVisualizer() {
     return geo;
   }, []);
 
-  useFrame((state, delta) => {
-    if (materialRef.current) {
-      materialRef.current.uTime += delta;
-    }
-  });
-
   return (
     <points geometry={geometry}>
       <harmonicMaterial
-        ref={materialRef}
+        ref={ref}
         transparent
         depthWrite={false}
         blending={THREE.AdditiveBlending}
@@ -146,4 +138,6 @@ export function HarmonicVisualizer() {
       />
     </points>
   );
-}
+});
+
+HarmonicVisualizer.displayName = "HarmonicVisualizer";
