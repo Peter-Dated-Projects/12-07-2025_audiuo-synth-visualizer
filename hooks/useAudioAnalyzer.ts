@@ -99,6 +99,7 @@ export const useAudioAnalyzer = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
   const [isSystemAudio, setIsSystemAudio] = useState(false);
+  const [isMicrophone, setIsMicrophone] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const previousVolumeRef = useRef<number>(1.0);
   const [isReady, setIsReady] = useState(false);
@@ -181,6 +182,7 @@ export const useAudioAnalyzer = () => {
     }
 
     setIsSystemAudio(false);
+    setIsMicrophone(false);
     setIsPlaying(false);
     
     // Restore file source if available
@@ -290,10 +292,79 @@ export const useAudioAnalyzer = () => {
 
   const setGlobalVolume = useCallback((volume: number) => {
     previousVolumeRef.current = volume;
-    if (gainNodeRef.current && !isSystemAudio) {
+    if (gainNodeRef.current && !isSystemAudio && !isMicrophone) {
       gainNodeRef.current.gain.value = volume;
     }
-  }, [isSystemAudio]);
+  }, [isSystemAudio, isMicrophone]);
+
+  const startMicrophone = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Stop existing audio if playing
+      if (audioRef.current) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      }
+
+      // Initialize context if needed
+      if (!audioContextRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioContextClass();
+        audioContextRef.current = ctx;
+
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.8;
+        analyserRef.current = analyser;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 1.0;
+        gainNodeRef.current = gainNode;
+
+        const multiBand = new MultiBandAnalyzer(ctx, 2048);
+        multiBandRef.current = multiBand;
+        
+        gainNode.connect(ctx.destination);
+      }
+
+      const ctx = audioContextRef.current!;
+
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
+      // Disconnect old source if it exists
+      if (sourceRef.current) {
+        sourceRef.current.disconnect();
+      }
+
+      // Create new source from stream
+      const source = ctx.createMediaStreamSource(stream);
+      sourceRef.current = source;
+
+      // Connect to analyzer chain
+      if (multiBandRef.current && gainNodeRef.current && analyserRef.current) {
+        multiBandRef.current.connect(source, gainNodeRef.current);
+        source.connect(analyserRef.current);
+        analyserRef.current.connect(gainNodeRef.current);
+        
+        // Mute output to prevent feedback loop
+        previousVolumeRef.current = gainNodeRef.current.gain.value;
+        gainNodeRef.current.gain.value = 0;
+      }
+
+      streamRef.current = stream;
+      setIsMicrophone(true);
+      setIsSystemAudio(false);
+      setIsReady(true);
+      setIsPlaying(true);
+
+    } catch (err) {
+      console.error("Error starting microphone:", err);
+      alert("Could not access microphone. Please check permissions.");
+    }
+  }, []);
 
   // Load cached file on mount
   useEffect(() => {
@@ -457,6 +528,8 @@ export const useAudioAnalyzer = () => {
     setGlobalVolume,
     startSystemAudio,
     stopSystemAudio,
+    startMicrophone,
     isSystemAudio,
+    isMicrophone,
   };
 };

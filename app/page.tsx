@@ -68,7 +68,9 @@ export default function Home() {
     getFrequencyData,
     startSystemAudio,
     stopSystemAudio,
+    startMicrophone,
     isSystemAudio,
+    isMicrophone,
   } = useAudioAnalyzer();
 
   const [volume, setVolume] = useState(0.5);
@@ -249,9 +251,9 @@ export default function Home() {
           <div className="absolute top-4 left-4 z-20 flex gap-4">
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={isSystemAudio}
+              disabled={isSystemAudio || isMicrophone}
               className={`px-4 py-2 backdrop-blur border rounded-full text-xs font-mono uppercase transition-colors ${
-                isSystemAudio
+                isSystemAudio || isMicrophone
                   ? "bg-zinc-900/40 border-zinc-800 text-zinc-600 cursor-not-allowed"
                   : "bg-zinc-900/80 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
               }`}
@@ -268,13 +270,30 @@ export default function Home() {
 
             <button
               onClick={isSystemAudio ? stopSystemAudio : startSystemAudio}
+              disabled={isMicrophone}
               className={`px-4 py-2 backdrop-blur border rounded-full text-xs font-mono uppercase transition-colors ${
                 isSystemAudio
                   ? "bg-red-900/80 border-red-700 text-red-300 hover:bg-red-800"
+                  : isMicrophone
+                  ? "bg-zinc-900/40 border-zinc-800 text-zinc-600 cursor-not-allowed"
                   : "bg-zinc-900/80 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
               }`}
             >
               {isSystemAudio ? "Stop System Audio" : "Use System Audio"}
+            </button>
+
+            <button
+              onClick={isMicrophone ? stopSystemAudio : startMicrophone}
+              disabled={isSystemAudio}
+              className={`px-4 py-2 backdrop-blur border rounded-full text-xs font-mono uppercase transition-colors ${
+                isMicrophone
+                  ? "bg-blue-900/80 border-blue-700 text-blue-300 hover:bg-blue-800"
+                  : isSystemAudio
+                  ? "bg-zinc-900/40 border-zinc-800 text-zinc-600 cursor-not-allowed"
+                  : "bg-zinc-900/80 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+              }`}
+            >
+              {isMicrophone ? "Stop Mic" : "Use Mic"}
             </button>
           </div>
         </div>
@@ -293,6 +312,13 @@ export default function Home() {
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                 <span className="text-xs font-mono text-red-400 uppercase tracking-wider">
                   System Audio Live
+                </span>
+              </div>
+            ) : isMicrophone ? (
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-900/20 border border-blue-900/50 rounded-full mr-4">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                <span className="text-xs font-mono text-blue-400 uppercase tracking-wider">
+                  Microphone Live
                 </span>
               </div>
             ) : (
